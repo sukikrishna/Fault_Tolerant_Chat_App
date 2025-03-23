@@ -106,10 +106,10 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         message_frame = ttk.Frame(self)
         message_frame.pack(side=tk.TOP, fill=tk.X)
 
-        results_frame = ttk.LabelFrame(self, text="Matched Users", padding=5)
-        results_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
+        self.results_frame = ttk.LabelFrame(self, text="Matched Users", padding=5)
+        self.results_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
 
-        user_list_container = ttk.Frame(results_frame)
+        user_list_container = ttk.Frame(self.results_frame)
         user_list_container.pack(fill=tk.X)
 
         scrollbar = ttk.Scrollbar(user_list_container, orient="vertical")
@@ -118,6 +118,8 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
         self.user_listbox.pack(side=tk.LEFT, fill=tk.X, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.user_listbox.delete(0, tk.END)
 
         self.user_listbox.bind('<<ListboxSelect>>', self.select_user_from_list)
 
@@ -251,7 +253,8 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             self.logged_in_label.config(text=f"Logged in as: {username}")
             self.logged_in_label.pack(side="left")
             self.delete_button.pack(side="right", padx=5)
-
+            self.user_listbox.config(state='normal')
+            self.is_search_active = False        
         else:
             messagebox.showerror("Error", response.error_message)
 
@@ -269,6 +272,8 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             self.password_entry.pack(side="left")
             self.login_button.pack(side="left")
             self.signup_button.pack(side="left")
+            self.user_listbox.config(state='normal')
+            self.is_search_active = False
         except Exception as e:
             print(e)
 
@@ -279,7 +284,9 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             self.logged_in_label.pack_forget()
             self.logout_button.pack_forget()
             self.delete_button.pack_forget()
-
+            self.user_listbox.delete(0, tk.END)  # Hide user list
+            self.user_listbox.config(state='disabled')
+            self.is_search_active = False
             self.username_label.pack(side="left")
             self.username_entry.pack(side="left")
             self.password_label.pack(side="left")
@@ -291,7 +298,9 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         self.logged_in_label.pack_forget()
         self.logout_button.pack_forget()
         self.delete_button.pack_forget()
-
+        self.user_listbox.delete(0, tk.END)  # Hide user list
+        self.user_listbox.config(state='disabled')
+        self.is_search_active = False
         self.username_label.pack(side="left")
         self.username_entry.pack(side="left")
         self.password_label.pack(side="left")
@@ -382,7 +391,7 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
                         self.display_notification(
                             f"Message from:{message.from_}")
 
-            time.sleep(2)
+            time.sleep(1)
 
     def update_chat(self):
         while True:
@@ -394,7 +403,7 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def update_user_list(self, interval=0):
         while True:
-            if not self.is_search_active:
+            if self.user_session_id and not self.is_search_active:
                 try:
                     users = self.list_users("*")
                     current_items = self.user_listbox.get(0, tk.END)
@@ -404,15 +413,13 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
                         name = user.username
                         status = "online" if user.status == "online" else "offline"
                         new_entry = f"{name} [{status}]"
-                        
+
                         if name in user_index_map:
                             idx = user_index_map[name]
-                            # Only update if status has changed
                             if current_items[idx] != new_entry:
                                 self.user_listbox.delete(idx)
                                 self.user_listbox.insert(idx, new_entry)
                         else:
-                            # new user: append at the end
                             self.user_listbox.insert(tk.END, new_entry)
 
                 except Exception:
