@@ -176,6 +176,54 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
 
         session.remove()
         return users
+    
+    
+    def DeleteMessages(self, request, context):
+        session = scoped_session(self.db_session)
+        user = session.query(UserModel).filter_by(session_id=request.session_id).first()
+
+        if not user:
+            status_code = StatusCode.USER_NOT_LOGGED_IN
+            status_message = StatusMessages.get_error_message(status_code)
+        else:
+            try:
+                messages_to_delete = session.query(MessageModel).filter(
+                    MessageModel.id.in_(request.message_ids),
+                    or_(
+                        MessageModel.sender_id == user.id,
+                        MessageModel.receiver_id == user.id
+                    )
+                ).all()
+
+                for message in messages_to_delete:
+                    # move to deleted messages table
+                    deleted = DeletedMessageModel(
+                        sender_id=message.sender_id,
+                        receiver_id=message.receiver_id,
+                        content=message.content,
+                        is_received=message.is_received,
+                        original_message_id=message.id
+                    )
+                    session.add(deleted)
+                    session.delete(message)
+
+                    # propagate deletion to slaves
+                    update_info = pickle.dumps(('messages', 'delete', message))
+                    self.update_queue.put(update_info)
+
+                session.commit()
+                status_code = StatusCode.SUCCESS
+                status_message = f"{len(messages_to_delete)} message(s) deleted successfully."
+
+            except Exception as e:
+                session.rollback()
+                status_code = StatusCode.INVALID_ARGUMENTS
+                status_message = str(e)
+
+        session.remove()
+        return spec_pb2.ServerResponse(error_code=status_code, error_message=status_message)
+
+
 
     def GetMessages(self, request, context):
         context.set_code(grpc.StatusCode.OK)

@@ -80,6 +80,11 @@ class ClientAccountStub(object):
                 request_serializer=spec__pb2.DeleteAccountRequest.SerializeToString,
                 response_deserializer=spec__pb2.ServerResponse.FromString,
                 _registered_method=True)
+        self.DeleteMessages = channel.unary_unary(
+                '/ClientAccount/DeleteMessages',
+                request_serializer=spec__pb2.DeleteMessagesRequest.SerializeToString,
+                response_deserializer=spec__pb2.ServerResponse.FromString,
+                _registered_method=True)
 
 
 class ClientAccountServicer(object):
@@ -153,6 +158,12 @@ class ClientAccountServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def DeleteMessages(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ClientAccountServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -199,6 +210,11 @@ def add_ClientAccountServicer_to_server(servicer, server):
             'Logout': grpc.unary_unary_rpc_method_handler(
                     servicer.Logout,
                     request_deserializer=spec__pb2.DeleteAccountRequest.FromString,
+                    response_serializer=spec__pb2.ServerResponse.SerializeToString,
+            ),
+            'DeleteMessages': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteMessages,
+                    request_deserializer=spec__pb2.DeleteMessagesRequest.FromString,
                     response_serializer=spec__pb2.ServerResponse.SerializeToString,
             ),
     }
@@ -445,6 +461,33 @@ class ClientAccount(object):
             target,
             '/ClientAccount/Logout',
             spec__pb2.DeleteAccountRequest.SerializeToString,
+            spec__pb2.ServerResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeleteMessages(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/ClientAccount/DeleteMessages',
+            spec__pb2.DeleteMessagesRequest.SerializeToString,
             spec__pb2.ServerResponse.FromString,
             options,
             channel_credentials,

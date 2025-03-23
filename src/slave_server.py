@@ -1,8 +1,13 @@
+# import sys
+# import os
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from concurrent import futures
 import grpc
 import spec_pb2
 import spec_pb2_grpc
-from utils import StatusCode, StatusMessages
+
+# from src.message_frame import StatusCode, StatusMessages
 
 from models import UserModel, MessageModel, DeletedMessageModel, init_db, get_session_factory
 from sqlalchemy.orm import scoped_session
@@ -59,7 +64,11 @@ class SlaveService(spec_pb2_grpc.SlaveServiceServicer):
         if action == 'add':
             session.add(new_obj)
         elif action == 'delete':
-            session.delete(new_obj)
+            # session.delete(new_obj)
+            existing = session.query(table_class_mapping[table]).get(new_obj.id)
+            if existing:
+                session.delete(existing)
+
         elif action == 'update':
             session.merge(new_obj)
         session.commit()
@@ -155,8 +164,19 @@ def assign_new_master(state, master_address, master_id):
     print('Assigning new master complete')
 
 
+# class ClientServiceSlave(spec_pb2_grpc.ClientAccountServicer):
+#     pass
+
 class ClientServiceSlave(spec_pb2_grpc.ClientAccountServicer):
-    pass
+    def __init__(self, master_address):
+        self.master_address = master_address
+
+    def __getattr__(self, name):
+        # Forward all method calls to the master
+        def method(*args, **kwargs):
+            raise grpc.RpcError(grpc.StatusCode.UNIMPLEMENTED, "This method is not available on slave.")
+        return method
+
 
 
 def serve_slave_client(slave_state):
@@ -165,7 +185,7 @@ def serve_slave_client(slave_state):
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     spec_pb2_grpc.add_ClientAccountServicer_to_server(
-        ClientServiceSlave(), server)
+        ClientServiceSlave(master_address=master_address), server)
     server.add_insecure_port(client_address)
     server.start()
     print("Client server started, listening on ", client_address)

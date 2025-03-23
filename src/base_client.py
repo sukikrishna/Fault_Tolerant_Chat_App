@@ -49,7 +49,8 @@ class ChatClientBase:
         with self.lock:
             # Check the connection using a simple request like ListUsers
             try:
-                response = self.stub.ListUsers(spec_pb2.Empty())
+                # Update this line to use ListUsersRequest instead of Empty
+                response = self.stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
                 if response:
                     print("Connection is active")
                     return
@@ -165,3 +166,12 @@ class ChatClientBase:
         msgs = self.stub.GetChat(
             spec_pb2.ChatRequest(session_id=self.user_session_id, username=recipient))
         return msgs
+    
+    @reconnect_on_error
+    def delete_messages(self, message_ids):
+        request = spec_pb2.DeleteMessagesRequest(
+            session_id=self.user_session_id,
+            message_ids=message_ids
+        )
+        response = self.stub.DeleteMessages(request)
+        return response

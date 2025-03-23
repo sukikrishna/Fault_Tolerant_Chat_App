@@ -9,6 +9,8 @@ import signal
 
 import spec_pb2
 
+from message_frame import MessageFrame
+
 
 class ChatClientGUI(tk.Tk, ChatClientBase):
     def __init__(self, addresses):
@@ -29,10 +31,10 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         user_list_update_thread.daemon = True
         user_list_update_thread.start()
 
-        chat_update_thread = threading.Thread(
-            target=self.update_chat)
-        chat_update_thread.daemon = True
-        chat_update_thread.start()
+        # chat_update_thread = threading.Thread(
+        #     target=self.update_chat)
+        # chat_update_thread.daemon = True
+        # chat_update_thread.start()
 
         notification_update_thread = threading.Thread(
             target=self.update_notification)
@@ -88,6 +90,28 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             self.load_chat_history(username)
         except Exception:
             pass  # ignore if no selection
+
+    def delete_selected_messages(self):
+        message_ids = []
+        for widget in self.chat_frame_inner.winfo_children():
+            if isinstance(widget, MessageFrame) and widget.select_var.get():
+                message_ids.append(widget.message_id)
+
+        if not message_ids:
+            messagebox.showinfo("Info", "No messages selected for deletion.")
+            return
+
+        try:
+            response = self.delete_messages(message_ids)
+            if response and response.error_code == 0:
+                messagebox.showinfo("Deleted", response.error_message)
+                self.load_chat_history(self.recipient_var.get())
+            else:
+                error_message = response.error_message if response else "Failed to delete messages. Server error."
+                messagebox.showerror("Error", error_message)
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {str(e)}")
+
 
     def create_widgets(self):
 
@@ -187,13 +211,31 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         separator.pack(side=tk.TOP, padx=5, pady=5, fill=tk.X)
 
         # Create chat display area
-        self.chat_text = scrolledtext.ScrolledText(
-            chat_frame, wrap=tk.WORD, state='disabled')
-        self.chat_text.pack(fill=tk.BOTH, expand=True)
+        # self.chat_text = scrolledtext.ScrolledText(
+        #     chat_frame, wrap=tk.WORD, state='disabled')
+        # self.chat_text.pack(fill=tk.BOTH, expand=True)
+
+        # Container for message frames
+        self.chat_canvas = tk.Canvas(chat_frame)
+        self.chat_scrollbar = ttk.Scrollbar(chat_frame, orient="vertical", command=self.chat_canvas.yview)
+        self.chat_frame_inner = ttk.Frame(self.chat_canvas)
+
+        self.chat_frame_inner.bind(
+            "<Configure>",
+            lambda e: self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
+        )
+
+        self.chat_canvas.create_window((0, 0), window=self.chat_frame_inner, anchor="nw")
+        self.chat_canvas.configure(yscrollcommand=self.chat_scrollbar.set)
+
+        self.chat_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.chat_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+
 
         # WhatsApp-style alignment tags
-        self.chat_text.tag_configure('left', justify='left', foreground='red')
-        self.chat_text.tag_configure('right', justify='right', foreground='green')
+        # self.chat_text.tag_configure('left', justify='left', foreground='red')
+        # self.chat_text.tag_configure('right', justify='right', foreground='green')
 
         # Create message input field and send button
         self.message_entry = ttk.Entry(message_frame)
@@ -205,6 +247,10 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
         recipient_label = ttk.Label(recipient_frame, text="")
         recipient_label.pack(side=tk.LEFT, padx=5)
+
+
+        delete_button = ttk.Button(chat_frame, text="Delete Selected", command=self.delete_selected_messages)
+        delete_button.pack(side=tk.BOTTOM, pady=5)
 
 
         ttk.Label(recipient_frame, text="To:").pack(side=tk.LEFT, padx=(5, 2))
@@ -341,15 +387,15 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
         if to and message:
             response = ChatClientBase.send_message(self, to, message)
-            # print(to, message, response)
             if response.error_code == 0:
                 self.message_entry.delete(0, tk.END)
-                # self.display_message(f"You: {message}")
+                self.load_chat_history(to)
             else:
                 messagebox.showerror("Error", response.error_message)
         else:
             messagebox.showerror(
                 "Error", "Please select a recipient and enter a message.")
+
 
     def retry_connection(self):
         self.connect()
@@ -361,9 +407,11 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
                 "Error", "Failed to establish connection. Try again.")
 
     def clear_chat(self):
-        self.chat_text.config(state='normal')
-        self.chat_text.delete(1.0, tk.END)
-        self.chat_text.config(state='disabled')
+        # self.chat_text.config(state='normal')
+        # self.chat_text.delete(1.0, tk.END)
+        # self.chat_text.config(state='disabled')
+        for widget in self.chat_frame_inner.winfo_children():
+            widget.destroy()
 
     def change_recipient(self, event):
         self.clear_chat()
@@ -378,34 +426,23 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             return
 
         self.clear_chat()
-        self.chat_text.config(state='normal')
-
         current_user = self.logged_in_label.cget("text").replace("Logged in as: ", "")
 
         for message in response.message:
-            sender = message.from_
-            is_self = sender == current_user
-            display_name = "You" if is_self else sender
-            tag = 'right' if is_self else 'left'
+            is_self = message.from_ == current_user
+            message_data = {
+                "id": message.message_id,
+                "from": message.from_,
+                "content": message.message,
+                "timestamp": message.time_stamp.seconds  # or convert properly if needed
+            }
 
-            # Format full timestamp: YYYY-MM-DD HH:MM
-            if message.HasField("time_stamp"):
-                ts = message.time_stamp
-                ts_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(ts.seconds))
-            else:
-                ts_str = "??:??"
+            msg_frame = MessageFrame(self.chat_frame_inner, message_data)
+            msg_frame.pack(fill='x', pady=2, padx=5, anchor='e' if is_self else 'w')
 
-            # WhatsApp-style bubble with emoji, name, timestamp, and message
-            bubble = f"{display_name} [{ts_str}]\n{message.message}\n\n"
+            self.chat_canvas.update_idletasks()
+            self.chat_canvas.yview_moveto(1.0)  # scroll to bottom
 
-            # Indent right for own messages
-            if is_self:
-                bubble = f"{' ' * 40}{bubble}"
-
-            self.chat_text.insert(tk.END, bubble, tag)
-    
-        self.chat_text.config(state='disabled')
-        self.chat_text.see(tk.END)
 
 
     def update_notification(self):
