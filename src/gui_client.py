@@ -262,7 +262,10 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             self.logged_in_label.pack(side="left")
             self.delete_button.pack(side="right", padx=5)
             self.user_listbox.config(state='normal')
-            self.is_search_active = False        
+            self.is_search_active = False
+
+            self.notification_thread = threading.Thread(target=self.update_notification, daemon=True)
+            self.notification_thread.start()        
         else:
             messagebox.showerror("Error", response.error_message)
 
@@ -270,6 +273,8 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         messagebox.showerror(
             "Error", "Server failed, connected to backup server. Please relogin")
         try:
+            self.unread_popup_shown = False
+            
             self.logged_in_label.pack_forget()
             self.logout_button.pack_forget()
             self.delete_button.pack_forget()
@@ -282,6 +287,9 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             self.signup_button.pack(side="left")
             self.user_listbox.config(state='normal')
             self.is_search_active = False
+
+            self.notification_thread = threading.Thread(target=self.update_notification, daemon=True)
+            self.notification_thread.start()
         except Exception as e:
             print(e)
 
@@ -407,9 +415,10 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
                 # Show popup with total unread messages (once per login)
                 if not self.unread_popup_shown:
                     total_unread = sum(seen_senders.values())
-                    if total_unread > 0:
-                        self.after(0, lambda: messagebox.showinfo(
-                            "Unread Messages", f"You have {total_unread} unread messages."))
+
+                    # if total_unread > 0:
+                    self.after(0, lambda: messagebox.showinfo(
+                        "Unread Messages", f"You have {total_unread} unread messages."))
                     self.unread_popup_shown = True
 
                 # Update notification area with per-sender counts
