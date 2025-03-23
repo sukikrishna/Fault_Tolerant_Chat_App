@@ -65,8 +65,17 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             response = self.stub.ListUsers(request)
 
             self.user_listbox.delete(0, tk.END)
+            total = 0
+            online = 0
+
             for user in response.user:
+                total += 1
+                if user.status.lower() == "online":
+                    online += 1
                 self.user_listbox.insert(tk.END, f"{user.username} [{user.status}]")
+
+            self.user_stats_label.config(text=f"Users found: {total} | Online Users: {online}")
+
         except Exception as e:
             messagebox.showerror("Error", f"Search failed: {e}")
 
@@ -108,8 +117,11 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         message_frame = ttk.Frame(self)
         message_frame.pack(side=tk.TOP, fill=tk.X)
 
-        self.results_frame = ttk.LabelFrame(self, text="Users", padding=5)
+        self.results_frame = ttk.LabelFrame(self, text="List of Users", padding=5)
         self.results_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
+
+        self.user_stats_label = ttk.Label(self.results_frame, text="Users found: 0 | Online Users: 0")
+        self.user_stats_label.pack(anchor='w', padx=5, pady=(0, 5))
 
         user_list_container = ttk.Frame(self.results_frame)
         user_list_container.pack(fill=tk.X)
@@ -194,19 +206,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         recipient_label = ttk.Label(recipient_frame, text="")
         recipient_label.pack(side=tk.LEFT, padx=5)
 
-        # choosen_recipient = tk.StringVar()
-        # self.recipient_combobox = ttk.Combobox(
-        #     recipient_frame, state="readonly", textvariable=choosen_recipient)
-        # self.recipient_combobox.pack(
-        #     side=tk.LEFT, padx=5, expand=True, fill=tk.X)
-
-        # # Add this line to bind the callback function to the variable
-        # self.recipient_combobox.bind(
-        #     "<<ComboboxSelected>>", self.change_recipient)
-
-        # list_users_button = ttk.Button(
-        #     recipient_frame, text="List Users", command=self.display_users)
-        # list_users_button.pack(side=tk.RIGHT, padx=5)
 
         ttk.Label(recipient_frame, text="To:").pack(side=tk.LEFT, padx=(5, 2))
 
@@ -446,6 +445,10 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             if self.user_session_id and not self.is_search_active:
                 try:
                     users = self.list_users("*")
+                    total = len(users)
+                    online = sum(1 for user in users if user.status == "online")
+                    self.user_stats_label.config(text=f"Users found: {total} | Online Users: {online}")
+
                     current_items = self.user_listbox.get(0, tk.END)
                     user_index_map = {item.split(' [')[0]: idx for idx, item in enumerate(current_items)}
 
