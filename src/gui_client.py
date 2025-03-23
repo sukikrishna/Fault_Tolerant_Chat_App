@@ -18,7 +18,7 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         self.is_search_active = False
 
         self.title("Chat App")
-        self.geometry("900x700")
+        self.geometry("1000x800")
 
         self.create_widgets()
         self.unread_popup_shown = False  # Flag to show unread popup once per login
@@ -396,40 +396,48 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         self.chat_text.config(state='disabled')
         self.chat_text.see(tk.END)
 
+
     def update_notification(self):
         """
         Periodically checks for unread messages and updates the notification area
         and popup once after login.
         """
         seen_senders = {}  # Tracks unread count per sender
+        popup_shown = False  # Local to this thread
 
         while True:
             msgs = ChatClientBase.receive_messages(self)
 
-            if msgs and msgs.error_code == 0:
-                # Count unread per sender
-                for message in msgs.message:
-                    seen_senders[message.from_] = seen_senders.get(message.from_, 0) + 1
+            if msgs and msgs.error_code in [0, 17]:  # 0 = messages; 17 = no messages
+                # Reset sender counts
+                seen_senders.clear()
 
-                # Show popup with total unread messages (once per login)
-                if not self.unread_popup_shown:
+                if msgs.error_code == 0:
+                    for message in msgs.message:
+                        seen_senders[message.from_] = seen_senders.get(message.from_, 0) + 1
+
+                # Show popup (once per login, even if 0 messages)
+                if not self.unread_popup_shown and not popup_shown:
                     total_unread = sum(seen_senders.values())
-
-                    # if total_unread > 0:
                     self.after(0, lambda: messagebox.showinfo(
                         "Unread Messages", f"You have {total_unread} unread messages."))
                     self.unread_popup_shown = True
+                    popup_shown = True
 
-                # Update notification area with per-sender counts
+                # Update notification display
                 self.notification_text.config(state='normal')
                 self.notification_text.delete(1.0, tk.END)
                 self.notification_text.insert(tk.END, "Unread messages:\n")
-                for sender, count in seen_senders.items():
-                    self.notification_text.insert(tk.END, f"- {sender} ({count})\n")
+                if seen_senders:
+                    for sender, count in seen_senders.items():
+                        self.notification_text.insert(tk.END, f"- {sender} ({count})\n")
+                else:
+                    self.notification_text.insert(tk.END, "No unread messages\n")
                 self.notification_text.config(state='disabled')
                 self.notification_text.see(tk.END)
 
             time.sleep(3)
+
 
 
     def update_chat(self):
