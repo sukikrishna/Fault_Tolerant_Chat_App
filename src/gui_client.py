@@ -108,7 +108,7 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         message_frame = ttk.Frame(self)
         message_frame.pack(side=tk.TOP, fill=tk.X)
 
-        self.results_frame = ttk.LabelFrame(self, text="Matched Users", padding=5)
+        self.results_frame = ttk.LabelFrame(self, text="Users", padding=5)
         self.results_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
 
         user_list_container = ttk.Frame(self.results_frame)
@@ -178,6 +178,10 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         self.chat_text = scrolledtext.ScrolledText(
             chat_frame, wrap=tk.WORD, state='disabled')
         self.chat_text.pack(fill=tk.BOTH, expand=True)
+
+        # WhatsApp-style alignment tags
+        self.chat_text.tag_configure('left', justify='left', foreground='red')
+        self.chat_text.tag_configure('right', justify='right', foreground='green')
 
         # Create message input field and send button
         self.message_entry = ttk.Entry(message_frame)
@@ -367,19 +371,23 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             return
 
         response = ChatClientBase.get_chat(self, recipient)
-
-        if not response:
+        if not response or response.error_code != 0:
             return
 
-        if response.error_code == 0:
-            self.clear_chat()
-            self.chat_text.config(state='normal')
-            self.chat_text.delete(1.0, tk.END)
-            for message in response.message:
-                self.chat_text.insert(
-                    tk.END, f"{message.from_}: {message.message}\n")
-            self.chat_text.config(state='disabled')
+        self.clear_chat()
+        self.chat_text.config(state='normal')
 
+        current_user = self.logged_in_label.cget("text").replace("Logged in as: ", "")
+
+        for message in response.message:
+            sender = message.from_
+            is_self = sender == current_user
+            display_name = "You" if is_self else sender
+            tag = 'right' if is_self else 'left'
+            self.chat_text.insert(tk.END, f"{display_name}: {message.message}\n", tag)
+
+        self.chat_text.config(state='disabled')
+        self.chat_text.see(tk.END)
 
     def update_notification(self):
         """
