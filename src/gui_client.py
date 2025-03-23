@@ -1,7 +1,7 @@
 import tkinter as tk
 import threading
 import time
-from tkinter import ttk, scrolledtext
+from tkinter import ttk, scrolledtext, simpledialog
 from base_client import ChatClientBase
 import tkinter.messagebox as messagebox
 from ttkthemes import ThemedStyle
@@ -46,8 +46,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             print("Error logging out:", e)
         self.destroy()
 
-
-
     def search_users(self):
         pattern = self.recipient_var.get()
         if not pattern:
@@ -65,7 +63,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         except Exception as e:
             messagebox.showerror("Error", f"Search failed: {e}")
 
-
     def select_user_from_list(self, event):
         try:
             selection = self.user_listbox.get(self.user_listbox.curselection())
@@ -75,8 +72,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             self.load_chat_history(username)
         except Exception:
             pass  # ignore if no selection
-
-
 
     def create_widgets(self):
 
@@ -106,16 +101,12 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         message_frame = ttk.Frame(self)
         message_frame.pack(side=tk.TOP, fill=tk.X)
 
-
-
         results_frame = ttk.LabelFrame(self, text="Matched Users", padding=5)
         results_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
 
         self.user_listbox = tk.Listbox(results_frame, height=4)
         self.user_listbox.pack(fill=tk.X)
         self.user_listbox.bind('<<ListboxSelect>>', self.select_user_from_list)
-
-
 
         # Create input fields and labels
         self.logged_in_label = ttk.Label(top_frame, text="Logged in as:")
@@ -149,6 +140,12 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             top_frame, text="Logout", command=self.logout)
         self.logout_button.pack(side=tk.LEFT, padx=5)
         self.logout_button.pack_forget()
+        
+        # Add this after the logout button
+        self.delete_button = ttk.Button(
+            top_frame, text="Delete Account", command=self.delete_account)
+        self.delete_button.pack(side=tk.LEFT, padx=5)
+        self.delete_button.pack_forget()  # Initially hidden
 
         # Create notification area inside chat_frame
         self.notification_text = scrolledtext.ScrolledText(
@@ -240,6 +237,7 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
             self.logged_in_label.config(text=f"Logged in as: {username}")
             self.logged_in_label.pack(side="left")
+            self.delete_button.pack(side="right", padx=5)
 
         else:
             messagebox.showerror("Error", response.error_message)
@@ -250,7 +248,8 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         try:
             self.logged_in_label.pack_forget()
             self.logout_button.pack_forget()
-
+            self.delete_button.pack_forget()
+            
             self.username_label.pack(side="left")
             self.username_entry.pack(side="left")
             self.password_label.pack(side="left")
@@ -266,6 +265,7 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         if response.error_code == 0:
             self.logged_in_label.pack_forget()
             self.logout_button.pack_forget()
+            self.delete_button.pack_forget()
 
             self.username_label.pack(side="left")
             self.username_entry.pack(side="left")
@@ -273,6 +273,18 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             self.password_entry.pack(side="left")
             self.login_button.pack(side="left")
             self.signup_button.pack(side="left")
+
+    def reset_to_login_view(self):
+        self.logged_in_label.pack_forget()
+        self.logout_button.pack_forget()
+        self.delete_button.pack_forget()
+
+        self.username_label.pack(side="left")
+        self.username_entry.pack(side="left")
+        self.password_label.pack(side="left")
+        self.password_entry.pack(side="left")
+        self.login_button.pack(side="left")
+        self.signup_button.pack(side="left")
 
     def display_users(self):
         response = ChatClientBase.list_users(self)
@@ -325,23 +337,22 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         self.load_chat_history(event.widget.get())
 
     def load_chat_history(self, recipient):
+        if not self.user_session_id or not recipient:
+            return
 
-        # print("inside load_chat_history: ", recipient)
+        response = ChatClientBase.get_chat(self, recipient)
 
-        if recipient:
-            response = ChatClientBase.get_chat(self, recipient)
+        if not response:
+            return
 
-            if response.error_code == 0:
-                self.clear_chat()
-                self.chat_text.config(state='normal')
-                self.chat_text.delete(1.0, tk.END)
-                for message in response.message:
-                    self.chat_text.insert(
-                        tk.END, f"{message.from_}: {message.message}\n")
-                self.chat_text.config(state='disabled')
-            else:
-                pass
-                # print(response.error_message)
+        if response.error_code == 0:
+            self.clear_chat()
+            self.chat_text.config(state='normal')
+            self.chat_text.delete(1.0, tk.END)
+            for message in response.message:
+                self.chat_text.insert(
+                    tk.END, f"{message.from_}: {message.message}\n")
+            self.chat_text.config(state='disabled')
 
     def update_notification(self):
 
@@ -381,6 +392,54 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             users = self.list_users()
             # users = self.list_users("*")  # explicitly pass wildcard
             time.sleep(interval)
+
+    def delete_account(self):
+        confirm = messagebox.askyesno(
+            "Confirm Deletion", "Are you sure you want to delete your account? This action cannot be undone."
+        )
+
+        if not confirm:
+            return
+
+        # Ask for password again before deleting
+        password = simpledialog.askstring(
+            "Password Confirmation",
+            "Please enter your password to delete your account:",
+            show="*"
+        )
+
+        if not password:
+            messagebox.showwarning("Cancelled", "Account deletion cancelled.")
+            return
+
+        # Try logging in again to verify password
+        username = self.username_entry.get()
+        login_response = ChatClientBase.login(self, username, password)
+
+        if login_response.error_code != 0:
+            messagebox.showerror("Error", "Password incorrect. Cannot delete account.")
+            return
+
+        self.user_session_id = login_response.session_id
+        response = ChatClientBase.delete_account(self)
+
+        if not response:
+            messagebox.showerror("Error", "No response from server.")
+            return
+
+        if response.error_code == 0:
+            messagebox.showinfo("Deleted", "Account deleted successfully.")
+            self.user_session_id = ""
+            self.reset_to_login_view()
+
+            # Clear chat and notification areas
+            self.clear_chat()
+            self.notification_text.config(state='normal')
+            self.notification_text.delete(1.0, tk.END)
+            self.notification_text.config(state='disabled')
+
+        else:
+            messagebox.showerror("Error", response.error_message)
 
     @classmethod
     def run(cls, addresses):

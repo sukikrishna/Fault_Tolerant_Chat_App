@@ -346,8 +346,8 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
                     is_received=message.is_received,
                     original_message_id=message.id,
                 )
-            session.add(deleted_message)
-            session.delete(message)
+                session.add(deleted_message)
+                session.delete(message)
 
             # Delete user
             session.delete(user)
