@@ -219,10 +219,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         self.search_button.pack(side=tk.LEFT, padx=5)
 
 
-        clear_button = ttk.Button(
-            chat_frame, text="Clear", command=self.clear_chat)
-        clear_button.pack(side=tk.BOTTOM, pady=5)
-
     def display_notification(self, notification_text):
         self.notification_text.configure(state='normal')
         self.notification_text.insert(tk.END, notification_text + "\n")
@@ -391,8 +387,23 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             is_self = sender == current_user
             display_name = "You" if is_self else sender
             tag = 'right' if is_self else 'left'
-            self.chat_text.insert(tk.END, f"{display_name}: {message.message}\n", tag)
 
+            # Format full timestamp: YYYY-MM-DD HH:MM
+            if message.HasField("time_stamp"):
+                ts = message.time_stamp
+                ts_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(ts.seconds))
+            else:
+                ts_str = "??:??"
+
+            # WhatsApp-style bubble with emoji, name, timestamp, and message
+            bubble = f"{display_name} [{ts_str}]\n{message.message}\n\n"
+
+            # Indent right for own messages
+            if is_self:
+                bubble = f"{' ' * 40}{bubble}"
+
+            self.chat_text.insert(tk.END, bubble, tag)
+    
         self.chat_text.config(state='disabled')
         self.chat_text.see(tk.END)
 
