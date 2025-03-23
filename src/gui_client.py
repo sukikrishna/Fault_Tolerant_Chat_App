@@ -15,6 +15,8 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         tk.Tk.__init__(self)
         ChatClientBase.__init__(self, addresses)
 
+        self.is_search_active = False
+
         self.title("Chat App")
         self.geometry("900x700")
 
@@ -47,11 +49,14 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         self.destroy()
 
     def search_users(self):
-        pattern = self.recipient_var.get()
+        pattern = self.recipient_var.get().strip()
         if not pattern:
+            self.is_search_active = False
             pattern = "*"
-        elif not pattern.endswith("*"):
-            pattern += "*"
+        else:
+            self.is_search_active = True
+            if not pattern.endswith("*"):
+                pattern += "*"
 
         try:
             request = spec_pb2.ListUsersRequest(wildcard=pattern)
@@ -104,8 +109,16 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         results_frame = ttk.LabelFrame(self, text="Matched Users", padding=5)
         results_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
 
-        self.user_listbox = tk.Listbox(results_frame, height=4)
-        self.user_listbox.pack(fill=tk.X)
+        user_list_container = ttk.Frame(results_frame)
+        user_list_container.pack(fill=tk.X)
+
+        scrollbar = ttk.Scrollbar(user_list_container, orient="vertical")
+        self.user_listbox = tk.Listbox(user_list_container, height=4, yscrollcommand=scrollbar.set)
+        scrollbar.config(command=self.user_listbox.yview)
+
+        self.user_listbox.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
         self.user_listbox.bind('<<ListboxSelect>>', self.select_user_from_list)
 
         # Create input fields and labels
@@ -379,18 +392,31 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             self.load_chat_history(self.recipient_var.get())
             time.sleep(1)
 
-    # def update_user_list(self, interval=2):
-    #     while True:
-    #         users = self.list_users()
-
-    #         self.recipient_combobox['values'] = [
-    #             user.username for user in users]
-    #         time.sleep(interval)
-
-    def update_user_list(self, interval=2):
+    def update_user_list(self, interval=0):
         while True:
-            users = self.list_users()
-            # users = self.list_users("*")  # explicitly pass wildcard
+            if not self.is_search_active:
+                try:
+                    users = self.list_users("*")
+                    current_items = self.user_listbox.get(0, tk.END)
+                    user_index_map = {item.split(' [')[0]: idx for idx, item in enumerate(current_items)}
+
+                    for user in users:
+                        name = user.username
+                        status = "online" if user.status == "online" else "offline"
+                        new_entry = f"{name} [{status}]"
+                        
+                        if name in user_index_map:
+                            idx = user_index_map[name]
+                            # Only update if status has changed
+                            if current_items[idx] != new_entry:
+                                self.user_listbox.delete(idx)
+                                self.user_listbox.insert(idx, new_entry)
+                        else:
+                            # new user: append at the end
+                            self.user_listbox.insert(tk.END, new_entry)
+
+                except Exception:
+                    pass
             time.sleep(interval)
 
     def delete_account(self):
