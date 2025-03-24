@@ -121,8 +121,12 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
         try:
             response = self.delete_messages(message_ids)
+            # if response and response.error_code == 0:
+            #     messagebox.showinfo("Deleted", response.error_message)
+            #     self.load_chat_history(self.recipient_var.get())
             if response and response.error_code == 0:
                 messagebox.showinfo("Deleted", response.error_message)
+                self.clear_chat()
                 self.load_chat_history(self.recipient_var.get())
             else:
                 error_message = response.error_message if response else "Failed to delete messages. Server error."
@@ -475,7 +479,10 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         self.clear_chat()
         self.load_chat_history(event.widget.get())
 
+
     def load_chat_history(self, recipient):
+        """Loads and displays chat history with the specified recipient."""
+
         if not self.user_session_id or not recipient:
             return
 
@@ -486,13 +493,12 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         self.clear_chat()
         current_user = self.logged_in_label.cget("text").replace("Logged in as: ", "")
 
-        # Temporarily disable geometry propagation to prevent intermediate redraws
-        self.chat_canvas.update_idletasks()
-        self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
-        self.chat_canvas.yview_moveto(0.0)
-
-        # Suppress redraw while inserting all messages
         self.chat_canvas.configure(state='disabled')
+        self.chat_canvas.update_idletasks()
+
+        # Temporarily suppress scrolling
+        frames = []
+
         for message in response.message:
             is_self = message.from_ == current_user
             message_data = {
@@ -503,18 +509,22 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             }
 
             msg_frame = MessageFrame(self.chat_frame_inner, message_data)
+            frames.append((msg_frame, is_self))
+
+        for msg_frame, is_self in frames:
             msg_frame.pack(fill='x', pady=2, padx=5, anchor='e' if is_self else 'w')
 
         self.chat_canvas.configure(state='normal')
         self.chat_canvas.update_idletasks()
 
-        # Smart scroll only if content overflows
+        # Smart scroll if overflow, otherwise scroll to top
         chat_bbox = self.chat_canvas.bbox("all")
         view_height = self.chat_canvas.winfo_height()
         if chat_bbox and chat_bbox[3] > view_height:
             self.chat_canvas.yview_moveto(1.0)
         else:
             self.chat_canvas.yview_moveto(0.0)
+
 
 
     def update_notification(self):
