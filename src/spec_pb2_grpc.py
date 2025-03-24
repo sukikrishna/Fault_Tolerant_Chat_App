@@ -500,8 +500,8 @@ class ClientAccount(object):
             _registered_method=True)
 
 
-class MasterServiceStub(object):
-    """Define a gRPC service for master server communication
+class LeaderServiceStub(object):
+    """Define a gRPC service for leader server communication
     """
 
     def __init__(self, channel):
@@ -510,79 +510,79 @@ class MasterServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.RegisterSlave = channel.unary_unary(
-                '/MasterService/RegisterSlave',
-                request_serializer=spec__pb2.RegisterSlaveRequest.SerializeToString,
-                response_deserializer=spec__pb2.RegisterSlaveResponse.FromString,
+        self.RegisterFollower = channel.unary_unary(
+                '/LeaderService/RegisterFollower',
+                request_serializer=spec__pb2.RegisterFollowerRequest.SerializeToString,
+                response_deserializer=spec__pb2.RegisterFollowerResponse.FromString,
                 _registered_method=True)
         self.HeartBeat = channel.unary_unary(
-                '/MasterService/HeartBeat',
+                '/LeaderService/HeartBeat',
                 request_serializer=spec__pb2.Empty.SerializeToString,
                 response_deserializer=spec__pb2.Ack.FromString,
                 _registered_method=True)
-        self.CheckMaster = channel.unary_unary(
-                '/MasterService/CheckMaster',
+        self.CheckLeader = channel.unary_unary(
+                '/LeaderService/CheckLeader',
                 request_serializer=spec__pb2.Empty.SerializeToString,
                 response_deserializer=spec__pb2.Ack.FromString,
                 _registered_method=True)
 
 
-class MasterServiceServicer(object):
-    """Define a gRPC service for master server communication
+class LeaderServiceServicer(object):
+    """Define a gRPC service for leader server communication
     """
 
-    def RegisterSlave(self, request, context):
-        """Define an RPC for registering a slave
+    def RegisterFollower(self, request, context):
+        """Define an RPC for registering a follower
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def HeartBeat(self, request, context):
-        """when a slave checks in, master send a response if it doesn't leader elction will be triggered
+        """when a follower checks in, leader send a response if it doesn't leader elction will be triggered
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CheckMaster(self, request, context):
+    def CheckLeader(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_MasterServiceServicer_to_server(servicer, server):
+def add_LeaderServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'RegisterSlave': grpc.unary_unary_rpc_method_handler(
-                    servicer.RegisterSlave,
-                    request_deserializer=spec__pb2.RegisterSlaveRequest.FromString,
-                    response_serializer=spec__pb2.RegisterSlaveResponse.SerializeToString,
+            'RegisterFollower': grpc.unary_unary_rpc_method_handler(
+                    servicer.RegisterFollower,
+                    request_deserializer=spec__pb2.RegisterFollowerRequest.FromString,
+                    response_serializer=spec__pb2.RegisterFollowerResponse.SerializeToString,
             ),
             'HeartBeat': grpc.unary_unary_rpc_method_handler(
                     servicer.HeartBeat,
                     request_deserializer=spec__pb2.Empty.FromString,
                     response_serializer=spec__pb2.Ack.SerializeToString,
             ),
-            'CheckMaster': grpc.unary_unary_rpc_method_handler(
-                    servicer.CheckMaster,
+            'CheckLeader': grpc.unary_unary_rpc_method_handler(
+                    servicer.CheckLeader,
                     request_deserializer=spec__pb2.Empty.FromString,
                     response_serializer=spec__pb2.Ack.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'MasterService', rpc_method_handlers)
+            'LeaderService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('MasterService', rpc_method_handlers)
+    server.add_registered_method_handlers('LeaderService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class MasterService(object):
-    """Define a gRPC service for master server communication
+class LeaderService(object):
+    """Define a gRPC service for leader server communication
     """
 
     @staticmethod
-    def RegisterSlave(request,
+    def RegisterFollower(request,
             target,
             options=(),
             channel_credentials=None,
@@ -595,9 +595,9 @@ class MasterService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/MasterService/RegisterSlave',
-            spec__pb2.RegisterSlaveRequest.SerializeToString,
-            spec__pb2.RegisterSlaveResponse.FromString,
+            '/LeaderService/RegisterFollower',
+            spec__pb2.RegisterFollowerRequest.SerializeToString,
+            spec__pb2.RegisterFollowerResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -622,7 +622,7 @@ class MasterService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/MasterService/HeartBeat',
+            '/LeaderService/HeartBeat',
             spec__pb2.Empty.SerializeToString,
             spec__pb2.Ack.FromString,
             options,
@@ -636,7 +636,7 @@ class MasterService(object):
             _registered_method=True)
 
     @staticmethod
-    def CheckMaster(request,
+    def CheckLeader(request,
             target,
             options=(),
             channel_credentials=None,
@@ -649,7 +649,7 @@ class MasterService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/MasterService/CheckMaster',
+            '/LeaderService/CheckLeader',
             spec__pb2.Empty.SerializeToString,
             spec__pb2.Ack.FromString,
             options,
@@ -663,8 +663,8 @@ class MasterService(object):
             _registered_method=True)
 
 
-class SlaveServiceStub(object):
-    """Define a gRPC service for slave server communication
+class FollowerServiceStub(object):
+    """Define a gRPC service for follower server communication
     """
 
     def __init__(self, channel):
@@ -674,73 +674,73 @@ class SlaveServiceStub(object):
             channel: A grpc.Channel.
         """
         self.AcceptUpdates = channel.unary_unary(
-                '/SlaveService/AcceptUpdates',
+                '/FollowerService/AcceptUpdates',
                 request_serializer=spec__pb2.AcceptUpdatesRequest.SerializeToString,
                 response_deserializer=spec__pb2.ServerResponse.FromString,
                 _registered_method=True)
-        self.UpdateMaster = channel.unary_unary(
-                '/SlaveService/UpdateMaster',
-                request_serializer=spec__pb2.NewMasterRequest.SerializeToString,
+        self.UpdateLeader = channel.unary_unary(
+                '/FollowerService/UpdateLeader',
+                request_serializer=spec__pb2.NewLeaderRequest.SerializeToString,
                 response_deserializer=spec__pb2.Ack.FromString,
                 _registered_method=True)
-        self.UpdateSlaves = channel.unary_unary(
-                '/SlaveService/UpdateSlaves',
-                request_serializer=spec__pb2.UpdateSlavesRequest.SerializeToString,
+        self.UpdateFollowers = channel.unary_unary(
+                '/FollowerService/UpdateFollowers',
+                request_serializer=spec__pb2.UpdateFollowersRequest.SerializeToString,
                 response_deserializer=spec__pb2.Ack.FromString,
                 _registered_method=True)
 
 
-class SlaveServiceServicer(object):
-    """Define a gRPC service for slave server communication
+class FollowerServiceServicer(object):
+    """Define a gRPC service for follower server communication
     """
 
     def AcceptUpdates(self, request, context):
-        """Define an RPC for accepting updates from the master
+        """Define an RPC for accepting updates from the leader
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def UpdateMaster(self, request, context):
+    def UpdateLeader(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def UpdateSlaves(self, request, context):
+    def UpdateFollowers(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
 
-def add_SlaveServiceServicer_to_server(servicer, server):
+def add_FollowerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'AcceptUpdates': grpc.unary_unary_rpc_method_handler(
                     servicer.AcceptUpdates,
                     request_deserializer=spec__pb2.AcceptUpdatesRequest.FromString,
                     response_serializer=spec__pb2.ServerResponse.SerializeToString,
             ),
-            'UpdateMaster': grpc.unary_unary_rpc_method_handler(
-                    servicer.UpdateMaster,
-                    request_deserializer=spec__pb2.NewMasterRequest.FromString,
+            'UpdateLeader': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateLeader,
+                    request_deserializer=spec__pb2.NewLeaderRequest.FromString,
                     response_serializer=spec__pb2.Ack.SerializeToString,
             ),
-            'UpdateSlaves': grpc.unary_unary_rpc_method_handler(
-                    servicer.UpdateSlaves,
-                    request_deserializer=spec__pb2.UpdateSlavesRequest.FromString,
+            'UpdateFollowers': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateFollowers,
+                    request_deserializer=spec__pb2.UpdateFollowersRequest.FromString,
                     response_serializer=spec__pb2.Ack.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'SlaveService', rpc_method_handlers)
+            'FollowerService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('SlaveService', rpc_method_handlers)
+    server.add_registered_method_handlers('FollowerService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class SlaveService(object):
-    """Define a gRPC service for slave server communication
+class FollowerService(object):
+    """Define a gRPC service for follower server communication
     """
 
     @staticmethod
@@ -757,7 +757,7 @@ class SlaveService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/SlaveService/AcceptUpdates',
+            '/FollowerService/AcceptUpdates',
             spec__pb2.AcceptUpdatesRequest.SerializeToString,
             spec__pb2.ServerResponse.FromString,
             options,
@@ -771,7 +771,7 @@ class SlaveService(object):
             _registered_method=True)
 
     @staticmethod
-    def UpdateMaster(request,
+    def UpdateLeader(request,
             target,
             options=(),
             channel_credentials=None,
@@ -784,8 +784,8 @@ class SlaveService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/SlaveService/UpdateMaster',
-            spec__pb2.NewMasterRequest.SerializeToString,
+            '/FollowerService/UpdateLeader',
+            spec__pb2.NewLeaderRequest.SerializeToString,
             spec__pb2.Ack.FromString,
             options,
             channel_credentials,
@@ -798,7 +798,7 @@ class SlaveService(object):
             _registered_method=True)
 
     @staticmethod
-    def UpdateSlaves(request,
+    def UpdateFollowers(request,
             target,
             options=(),
             channel_credentials=None,
@@ -811,8 +811,8 @@ class SlaveService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/SlaveService/UpdateSlaves',
-            spec__pb2.UpdateSlavesRequest.SerializeToString,
+            '/FollowerService/UpdateFollowers',
+            spec__pb2.UpdateFollowersRequest.SerializeToString,
             spec__pb2.Ack.FromString,
             options,
             channel_credentials,

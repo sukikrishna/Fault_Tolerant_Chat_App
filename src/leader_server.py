@@ -19,7 +19,7 @@ from sqlalchemy import inspect
 import threading
 import time
 import queue
-from slave_server import *
+from follower_server import *
 import fnmatch
 
 
@@ -131,7 +131,7 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
                 msg2 = session.query(MessageModel).filter_by(
                     id=msg.id).first()
 
-                # print("before updating slaves")
+                # print("before updating followers")
                 update_info = pickle.dumps(('messages', "add", msg2))
                 # print(update_info)
                 try:
@@ -207,7 +207,7 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
                     session.add(deleted)
                     session.delete(message)
 
-                    # propagate deletion to slaves
+                    # propagate deletion to followers
                     update_info = pickle.dumps(('messages', 'delete', message))
                     self.update_queue.put(update_info)
 
@@ -431,17 +431,17 @@ def fetch_all_data_from_orm(connection):
     return data
 
 
-class MasterService(spec_pb2_grpc.MasterServiceServicer):
+class LeaderService(spec_pb2_grpc.LeaderServiceServicer):
     def __init__(self, states, db_engine):
         super().__init__()
         self.states = states
         self.db_engine = db_engine
 
-    def RegisterSlave(self, request, context):
-        slave_id = request.slave_id
-        slave_address = request.slave_address
-        if (slave_id, slave_address) not in self.states['slaves']:
-            self.states['slaves'].append((slave_id, slave_address))
+    def RegisterFollower(self, request, context):
+        follower_id = request.follower_id
+        follower_address = request.follower_address
+        if (follower_id, follower_address) not in self.states['followers']:
+            self.states['followers'].append((follower_id, follower_address))
         # print(self.states)
 
         # Fetch and pickle the data from ORM objects
@@ -450,34 +450,34 @@ class MasterService(spec_pb2_grpc.MasterServiceServicer):
             data = fetch_all_data_from_orm(connection)
             pickled_data = pickle.dumps(data)
 
-        other_slaves = [
-            f"{slave[0]}-{slave[1]}" for slave in self.states['slaves'] if slave[0] != slave_id]
-        # print(other_slaves)
-        # inform other slaves about this new slave
-        for slave in other_slaves:
-            saddress = slave.split("-")[1]
-            # print(slave, saddress)
+        other_followers = [
+            f"{follower[0]}-{follower[1]}" for follower in self.states['followers'] if follower[0] != follower_id]
+        # print(other_followers)
+        # inform other followers about this new follower
+        for follower in other_followers:
+            saddress = follower.split("-")[1]
+            # print(follower, saddress)
             with grpc.insecure_channel(saddress) as channel:
-                stub = spec_pb2_grpc.SlaveServiceStub(channel)
+                stub = spec_pb2_grpc.FollowerServiceStub(channel)
                 # print(channel, stub)
-                stub.UpdateSlaves(spec_pb2.UpdateSlavesRequest(
-                    update_data=pickle.dumps((slave_id, slave_address))
+                stub.UpdateFollowers(spec_pb2.UpdateFollowersRequest(
+                    update_data=pickle.dumps((follower_id, follower_address))
                 ))
 
-        response = spec_pb2.RegisterSlaveResponse(
+        response = spec_pb2.RegisterFollowerResponse(
             error_code=0,
             error_message="",
             pickled_db=pickled_data,
-            other_slaves=other_slaves
+            other_followers=other_followers
         )
-        # print("Slave {} registered {} resp {}".format(slave_id, request.slave_address, response))
+        # print("Follower {} registered {} resp {}".format(follower_id, request.follower_address, response))
 
         return response
 
     def HeartBeat(self, request, context):
         return spec_pb2.Ack(error_code=0, error_message="")
 
-    def CheckMaster(self, request, context):
+    def CheckLeader(self, request, context):
         return spec_pb2.Ack(error_code=0, error_message="")
 
 
@@ -488,9 +488,9 @@ table_class_mapping = {
 }
 
 
-def serve_master_client(master_state):
-    db_session, address, update_queue, client_address = master_state['db_session'], master_state[
-        'master_address'], master_state['update_queue'], master_state['client_address']
+def serve_leader_client(leader_state):
+    db_session, address, update_queue, client_address = leader_state['db_session'], leader_state[
+        'leader_address'], leader_state['update_queue'], leader_state['client_address']
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     spec_pb2_grpc.add_ClientAccountServicer_to_server(
         ClientService(db_session=db_session, update_queue=update_queue), server)
@@ -499,18 +499,18 @@ def serve_master_client(master_state):
     print("Client server started, listening on " + client_address)
     return server
 
-# internal channel for master to communicate with slave
+# internal channel for leader to communicate with follower
 
 
-def serve_master_slave(master_state):
-    address, db_engine = master_state['master_address'], master_state['db_engine']
+def serve_leader_follower(leader_state):
+    address, db_engine = leader_state['leader_address'], leader_state['db_engine']
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=20))
-    spec_pb2_grpc.add_MasterServiceServicer_to_server(
-        MasterService(master_state, db_engine=db_engine), server)
+    spec_pb2_grpc.add_LeaderServiceServicer_to_server(
+        LeaderService(leader_state, db_engine=db_engine), server)
     server.add_insecure_port(address)
     server.start()
-    print("Master server started, listening on " + address)
+    print("Leader server started, listening on " + address)
     return server
 
 
@@ -522,25 +522,25 @@ def get_update_data(update_queue):
         return None
 
 
-def update_slaves(master_state):
+def update_followers(leader_state):
 
     while True:
-        slave_addresses = master_state['slaves']
-        update_queue = master_state['update_queue']
+        follower_addresses = leader_state['followers']
+        update_queue = leader_state['update_queue']
 
         # Fetch the update data here
         update_data = get_update_data(update_queue)
 
         if update_data is not None:
-            # Iterate through each slave and send updates
-            for _, slave_address in slave_addresses:
+            # Iterate through each follower and send updates
+            for _, follower_address in follower_addresses:
                 try:
-                    # print(slave_address)
-                    with grpc.insecure_channel(slave_address) as channel:
-                        stub = spec_pb2_grpc.SlaveServiceStub(channel)
+                    # print(follower_address)
+                    with grpc.insecure_channel(follower_address) as channel:
+                        stub = spec_pb2_grpc.FollowerServiceStub(channel)
                         accept_updates_request = spec_pb2.AcceptUpdatesRequest(
                             update_data=update_data)
                         response = stub.AcceptUpdates(accept_updates_request)
                 except Exception as e:
-                    print("Error while sending updates to slave: " + str(e))
+                    print("Error while sending updates to follower: " + str(e))
         time.sleep(2)

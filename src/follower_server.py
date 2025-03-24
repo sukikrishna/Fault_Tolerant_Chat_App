@@ -22,12 +22,12 @@ table_class_mapping = {
 }
 
 
-class SlaveService(spec_pb2_grpc.SlaveServiceServicer):
-    def __init__(self, db_session, master_address, state):
+class FollowerService(spec_pb2_grpc.FollowerServiceServicer):
+    def __init__(self, db_session, leader_address, state):
         self.db_session = db_session
-        self.master_address = master_address
+        self.leader_address = leader_address
         self.state = state
-        # print("Slave service initialized")
+        # print("Follower service initialized")
 
     def AcceptUpdates(self, request, context):
         update_data = request.update_data
@@ -44,7 +44,7 @@ class SlaveService(spec_pb2_grpc.SlaveServiceServicer):
         session = scoped_session(self.db_session)
 
         data = pickle.loads(update_data)
-        # update the slaves list
+        # update the followers list
         table, action, obj = data
         # print(action, obj)
         from sqlalchemy import inspect
@@ -78,38 +78,38 @@ class SlaveService(spec_pb2_grpc.SlaveServiceServicer):
         Users = session.query(UserModel).all()
         # print('after update', Users)
 
-    def UpdateMaster(self, request, context):
-        # print("UPDATING master", flush=True)
-        master_address, master_id = request.new_master_address, request.new_master_id
-        # print('new master', master_address, master_id, flush=True)
-        assign_new_master(self.state, master_address, master_id)
+    def UpdateLeader(self, request, context):
+        # print("UPDATING leader", flush=True)
+        leader_address, leader_id = request.new_leader_address, request.new_leader_id
+        # print('new leader', leader_address, leader_id, flush=True)
+        assign_new_leader(self.state, leader_address, leader_id)
         return spec_pb2.Ack(error_code=0, error_message="")
 
-    def UpdateSlaves(self, request, context):
-        # print("Updating slaves for slave")
-        new_slave = pickle.loads(request.update_data)
-        # remove the current slave from the list
-        self.state['slaves'].append(new_slave)
-        # print(new_slave, self.state['slaves'])
+    def UpdateFollowers(self, request, context):
+        # print("Updating followers for follower")
+        new_follower = pickle.loads(request.update_data)
+        # remove the current follower from the list
+        self.state['followers'].append(new_follower)
+        # print(new_follower, self.state['followers'])
         return spec_pb2.Ack(error_code=0, error_message="")
 
 
-def request_update(slave_state):
+def request_update(follower_state):
 
-    master_address, server_id, internal_address, db_session = slave_state[
-        'master_address'], slave_state['slave_id'], slave_state['slave_address'], slave_state['db_session']
+    leader_address, server_id, internal_address, db_session = follower_state[
+        'leader_address'], follower_state['follower_id'], follower_state['follower_address'], follower_state['db_session']
 
-    with grpc.insecure_channel(master_address) as channel:
-        stub = spec_pb2_grpc.MasterServiceStub(channel)
-        register_slave_request = spec_pb2.RegisterSlaveRequest(
-            slave_id=server_id, slave_address=internal_address)
-        response = stub.RegisterSlave(register_slave_request)
-        master_db = pickle.loads(response.pickled_db)
+    with grpc.insecure_channel(leader_address) as channel:
+        stub = spec_pb2_grpc.LeaderServiceStub(channel)
+        register_follower_request = spec_pb2.RegisterFollowerRequest(
+            follower_id=server_id, follower_address=internal_address)
+        response = stub.RegisterFollower(register_follower_request)
+        leader_db = pickle.loads(response.pickled_db)
 
-        # update database with the master data
+        # update database with the leader data
         session = scoped_session(db_session)
         try:
-            for table_name, records in master_db.items():
+            for table_name, records in leader_db.items():
                 for record in records:
                     # print("record", record, type(record), record.username)
 
@@ -130,13 +130,13 @@ def request_update(slave_state):
             session.rollback()
         finally:
             session.remove()  # Replace session.close() with session.remove()
-        slave_state['slaves'] = list(
-            set([tuple(slave.split('-')) for slave in response.other_slaves]))
+        follower_state['followers'] = list(
+            set([tuple(follower.split('-')) for follower in response.other_followers]))
 
 
-def assign_new_master(state, master_address, master_id):
-    print("Accepting new master")
-    state['master_address'] = master_address
+def assign_new_leader(state, leader_address, leader_id):
+    print("Accepting new leader")
+    state['leader_address'] = leader_address
     # this is only required for windows that has file lockers
     # print('db_eninge in ', 'db_engine' in state)
     if 'db_engine' in state:
@@ -149,58 +149,58 @@ def assign_new_master(state, master_address, master_id):
     state['database_engine'] = database_engine
     state['db_session'] = SessionFactory
 
-    slave_server = server_slave_master(state)
+    follower_server = server_follower_leader(state)
 
-    state['slave_master_server'] = slave_server
-    # send message to the masters registe method
+    state['follower_leader_server'] = follower_server
+    # send message to the leaders registe method
     request_update(state)
 
-    # remove master from the list of slaves
+    # remove leader from the list of followers
     try:
-        state['slaves'].remove((master_address, master_id))
+        state['followers'].remove((leader_address, leader_id))
     except:
         pass
 
-    print('Assigning new master complete')
+    print('Assigning new leader complete')
 
 
-# class ClientServiceSlave(spec_pb2_grpc.ClientAccountServicer):
+# class ClientServiceFollower(spec_pb2_grpc.ClientAccountServicer):
 #     pass
 
-class ClientServiceSlave(spec_pb2_grpc.ClientAccountServicer):
-    def __init__(self, master_address):
-        self.master_address = master_address
+class ClientServiceFollower(spec_pb2_grpc.ClientAccountServicer):
+    def __init__(self, leader_address):
+        self.leader_address = leader_address
 
     def __getattr__(self, name):
-        # Forward all method calls to the master
+        # Forward all method calls to the leader
         def method(*args, **kwargs):
-            raise grpc.RpcError(grpc.StatusCode.UNIMPLEMENTED, "This method is not available on slave.")
+            raise grpc.RpcError(grpc.StatusCode.UNIMPLEMENTED, "This method is not available on follower.")
         return method
 
 
 
-def serve_slave_client(slave_state):
-    db_session, address, master_address, client_address = slave_state['db_session'], slave_state[
-        'slave_address'], slave_state['master_address'], slave_state['client_address']
+def serve_follower_client(follower_state):
+    db_session, address, leader_address, client_address = follower_state['db_session'], follower_state[
+        'follower_address'], follower_state['leader_address'], follower_state['client_address']
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     spec_pb2_grpc.add_ClientAccountServicer_to_server(
-        ClientServiceSlave(master_address=master_address), server)
+        ClientServiceFollower(leader_address=leader_address), server)
     server.add_insecure_port(client_address)
     server.start()
     print("Client server started, listening on ", client_address)
     return server
 
 
-def server_slave_master(slave_state):
-    db_session, master_address, address, slaves = slave_state['db_session'], slave_state[
-        'master_address'], slave_state['slave_address'], slave_state['slaves']
+def server_follower_leader(follower_state):
+    db_session, leader_address, address, followers = follower_state['db_session'], follower_state[
+        'leader_address'], follower_state['follower_address'], follower_state['followers']
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    spec_pb2_grpc.add_SlaveServiceServicer_to_server(
-        SlaveService(db_session=db_session, master_address=master_address, state=slave_state), server)
+    spec_pb2_grpc.add_FollowerServiceServicer_to_server(
+        FollowerService(db_session=db_session, leader_address=leader_address, state=follower_state), server)
 
     server.add_insecure_port(address)
     server.start()
-    print("Slave server started, listening on " + address)
+    print("Follower server started, listening on " + address)
     return server

@@ -76,7 +76,7 @@ class ChatClientBase:
                         break
                 except grpc.RpcError as e:
                     if (e.code() == grpc.StatusCode.UNIMPLEMENTED):
-                        # we are probably talking to a slave so move the address to the end
+                        # we are probably talking to a follower so move the address to the end
                         if (self.addresses[0] in tried):
                             # we have visted all the addresses and nodes are not responding
                             # so we can exit
@@ -85,7 +85,7 @@ class ChatClientBase:
 
                         tried.add(self.addresses[0])
                         self.addresses.append(self.addresses.pop(0))
-                        print("talking to a slave, moving to next address",
+                        print("talking to a follower, moving to next address",
                               self.addresses)
                     else:
                         print(

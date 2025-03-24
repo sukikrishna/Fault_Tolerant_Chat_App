@@ -113,49 +113,49 @@ message User {
 message Users { repeated User user = 1; }
 
 
-// Define a gRPC service for master server communication
-service MasterService {
-  // Define an RPC for registering a slave
-  rpc RegisterSlave(RegisterSlaveRequest) returns (RegisterSlaveResponse);
+// Define a gRPC service for leader server communication
+service LeaderService {
+  // Define an RPC for registering a follower
+  rpc RegisterFollower(RegisterFollowerRequest) returns (RegisterFollowerResponse);
 
-  // when a slave checks in, master send a response if it doesn't leader elction will be triggered
+  // when a follower checks in, leader send a response if it doesn't leader elction will be triggered
   rpc HeartBeat(Empty) returns (Ack);
-  rpc CheckMaster(Empty) returns (Ack);
+  rpc CheckLeader(Empty) returns (Ack);
 }
 
-// Define a gRPC service for slave server communication
-service SlaveService {
-  // Define an RPC for accepting updates from the master
+// Define a gRPC service for follower server communication
+service FollowerService {
+  // Define an RPC for accepting updates from the leader
   rpc AcceptUpdates(AcceptUpdatesRequest) returns (ServerResponse);
-  rpc UpdateMaster(NewMasterRequest) returns (Ack);
-  rpc UpdateSlaves(UpdateSlavesRequest) returns (Ack);
+  rpc UpdateLeader(NewLeaderRequest) returns (Ack);
+  rpc UpdateFollowers(UpdateFollowersRequest) returns (Ack);
 }
 
-message NewMasterRequest {
-  string new_master_address = 1;
-  string new_master_id = 2;
+message NewLeaderRequest {
+  string new_leader_address = 1;
+  string new_leader_id = 2;
 }
 
-message UpdateSlavesRequest {
+message UpdateFollowersRequest {
   bytes update_data = 1;
 }
 
-// Request message for registering a slave
-message RegisterSlaveRequest {
-  string slave_id = 1;
-  string slave_address = 2;
+// Request message for registering a follower
+message RegisterFollowerRequest {
+  string follower_id = 1;
+  string follower_address = 2;
 }
 
-// Response message for registering a slave
-message RegisterSlaveResponse {
+// Response message for registering a follower
+message RegisterFollowerResponse {
   int32 error_code = 1;
   string error_message = 2;
   bytes pickled_db = 3;
-  repeated string other_slaves = 4;
+  repeated string other_followers = 4;
 }
 
 
-// Request message for accepting updates from the master
+// Request message for accepting updates from the leader
 message AcceptUpdatesRequest {
   bytes update_data = 1;
 }

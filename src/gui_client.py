@@ -592,7 +592,7 @@ if __name__ == "__main__":
     import argparse
 
     # take in a list of available address with the first one being
-    # the master
+    # the leader
     parser = argparse.ArgumentParser(
         description="Start a chat client.")
     parser.add_argument('-a', '--addresses', nargs='+',
