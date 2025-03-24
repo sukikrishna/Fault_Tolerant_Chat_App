@@ -476,12 +476,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         self.load_chat_history(event.widget.get())
 
     def load_chat_history(self, recipient):
-        """Loads and displays chat history with the given user.
-
-        Args:
-            recipient (str): Username of the chat partner.
-        """
-
         if not self.user_session_id or not recipient:
             return
 
@@ -492,21 +486,35 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         self.clear_chat()
         current_user = self.logged_in_label.cget("text").replace("Logged in as: ", "")
 
+        # Temporarily disable geometry propagation to prevent intermediate redraws
+        self.chat_canvas.update_idletasks()
+        self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
+        self.chat_canvas.yview_moveto(0.0)
+
+        # Suppress redraw while inserting all messages
+        self.chat_canvas.configure(state='disabled')
         for message in response.message:
             is_self = message.from_ == current_user
             message_data = {
                 "id": message.message_id,
                 "from": message.from_,
                 "content": message.message,
-                "timestamp": message.time_stamp.seconds  # or convert properly if needed
+                "timestamp": message.time_stamp.seconds
             }
 
             msg_frame = MessageFrame(self.chat_frame_inner, message_data)
             msg_frame.pack(fill='x', pady=2, padx=5, anchor='e' if is_self else 'w')
 
-            self.chat_canvas.update_idletasks()
-            self.chat_canvas.yview_moveto(1.0)  # scroll to bottom
+        self.chat_canvas.configure(state='normal')
+        self.chat_canvas.update_idletasks()
 
+        # Smart scroll only if content overflows
+        chat_bbox = self.chat_canvas.bbox("all")
+        view_height = self.chat_canvas.winfo_height()
+        if chat_bbox and chat_bbox[3] > view_height:
+            self.chat_canvas.yview_moveto(1.0)
+        else:
+            self.chat_canvas.yview_moveto(0.0)
 
 
     def update_notification(self):
