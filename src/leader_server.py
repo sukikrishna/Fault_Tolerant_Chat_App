@@ -26,17 +26,41 @@ import fnmatch
 import hashlib
 
 def hash_password(password):
+    """Hashes the given password using SHA-256.
+
+    Args:
+        password (str): The plain text password.
+
+    Returns:
+        str: The hashed password.
+    """
     return hashlib.sha256(password.encode()).hexdigest()
 
 
 class ClientService(spec_pb2_grpc.ClientAccountServicer):
 
     def __init__(self, db_session, update_queue):
+        """Initializes the ClientService.
+
+        Args:
+            db_session (SessionFactory): SQLAlchemy session factory.
+            update_queue (Queue): Queue to send update events to followers.
+        """
+
         super().__init__()
         self.db_session = db_session
         self.update_queue = update_queue
 
     def CreateAccount(self, request, context):
+        """Handles user account creation.
+
+        Args:
+            request (CreateAccountRequest): gRPC request with username and password.
+            context (grpc.ServicerContext): gRPC context object.
+
+        Returns:
+            ServerResponse: Response indicating success or failure.
+        """
 
         session = scoped_session(self.db_session)
         context.set_code(grpc.StatusCode.OK)
@@ -70,6 +94,15 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         return spec_pb2.ServerResponse(error_code=status_code, error_message=status_message)
 
     def Login(self, request, context):
+        """Handles user login and session ID generation.
+
+        Args:
+            request (LoginRequest): gRPC request with username and password.
+            context (grpc.ServicerContext): gRPC context object.
+
+        Returns:
+            ServerResponse: Includes session ID if login is successful.
+        """
 
         context.set_code(grpc.StatusCode.OK)
         session = scoped_session(self.db_session)
@@ -97,6 +130,15 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         return spec_pb2.ServerResponse(error_code=status_code, error_message=status_message, session_id=session_id)
 
     def Send(self, request, context):
+        """Handles sending a message from one user to another.
+
+        Args:
+            request (SendRequest): gRPC request with message details.
+            context (grpc.ServicerContext): gRPC context object.
+
+        Returns:
+            ServerResponse: Indicates whether the message was sent successfully.
+        """
 
         context.set_code(grpc.StatusCode.OK)
 
@@ -161,6 +203,16 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
     #     return users
 
     def ListUsers(self, request, context):
+        """Returns a list of users matching the optional wildcard.
+
+        Args:
+            request (ListUsersRequest): Request with optional wildcard filter.
+            context (grpc.ServicerContext): gRPC context object.
+
+        Returns:
+            Users: A list of users and their online statuses.
+        """
+
         context.set_code(grpc.StatusCode.OK)
         users = spec_pb2.Users()
         pattern = request.wildcard if request.wildcard else "*"
@@ -179,6 +231,16 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
     
     
     def DeleteMessages(self, request, context):
+        """Deletes specific messages and moves them to the deleted table.
+
+        Args:
+            request (DeleteMessagesRequest): Request with message IDs and session ID.
+            context (grpc.ServicerContext): gRPC context object.
+
+        Returns:
+            ServerResponse: Indicates success or failure.
+        """
+
         session = scoped_session(self.db_session)
         user = session.query(UserModel).filter_by(session_id=request.session_id).first()
 
@@ -224,8 +286,17 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         return spec_pb2.ServerResponse(error_code=status_code, error_message=status_message)
 
 
-
     def GetMessages(self, request, context):
+        """Fetches unread messages for the logged-in user.
+
+        Args:
+            request (ReceiveRequest): Request with session ID.
+            context (grpc.ServicerContext): gRPC context object.
+
+        Returns:
+            Messages: List of unread messages.
+        """
+
         context.set_code(grpc.StatusCode.OK)
 
         msgs = spec_pb2.Messages()
@@ -265,6 +336,16 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         return msgs
 
     def AcknowledgeReceivedMessages(self, request, context):
+        """Marks messages as received by their IDs.
+
+        Args:
+            request (AcknowledgeReceivedMessagesRequest): Message IDs to mark.
+            context (grpc.ServicerContext): gRPC context object.
+
+        Returns:
+            ServerResponse: Acknowledgement result.
+        """
+
         session = scoped_session(self.db_session)
         user = session.query(UserModel).filter_by(
             session_id=request.session_id).first()
@@ -302,6 +383,16 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         return spec_pb2.ServerResponse(error_code=status_code, error_message=status_message)
 
     def Logout(self, request, context):
+        """Logs out the current user.
+
+        Args:
+            request (DeleteAccountRequest): Request with session ID.
+            context (grpc.ServicerContext): gRPC context object.
+
+        Returns:
+            ServerResponse: Logout result.
+        """
+
         session = scoped_session(self.db_session)
         user = session.query(UserModel).filter_by(
             session_id=request.session_id).first()
@@ -321,6 +412,16 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         return spec_pb2.ServerResponse(error_code=status, error_message=status_message)
 
     def GetChat(self, request, context):
+        """Returns full chat history between current user and another user.
+
+        Args:
+            request (ChatRequest): Includes session ID and target username.
+            context (grpc.ServicerContext): gRPC context object.
+
+        Returns:
+            Messages: List of messages with timestamps.
+        """
+
         context.set_code(grpc.StatusCode.OK)
 
         msgs = spec_pb2.Messages()
@@ -373,6 +474,16 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         return msgs
 
     def DeleteAccount(self, request, context):
+        """Deletes the current user's account and related messages.
+
+        Args:
+            request (DeleteAccountRequest): Request with session ID.
+            context (grpc.ServicerContext): gRPC context object.
+
+        Returns:
+            ServerResponse: Result of the deletion.
+        """
+
         session = scoped_session(self.db_session)
         user = session.query(UserModel).filter_by(
             session_id=request.session_id).first()
@@ -410,10 +521,24 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
 
     @staticmethod
     def GenerateSessionID():
+        """Generates a new unique session ID.
+
+        Returns:
+            str: A UUID-based session string.
+        """
+
         return str(uuid.uuid4())
 
 
 def fetch_all_data_from_orm(connection):
+    """Fetches all ORM table data into a dictionary.
+
+    Args:
+        connection (sqlalchemy.engine.Connection): Database connection.
+
+    Returns:
+        dict: A mapping of table names to ORM objects.
+    """
     data = {}
     Session = sessionmaker(bind=connection)
     session = Session()
@@ -433,11 +558,28 @@ def fetch_all_data_from_orm(connection):
 
 class LeaderService(spec_pb2_grpc.LeaderServiceServicer):
     def __init__(self, states, db_engine):
+        """Initializes the leader service with server state and DB engine.
+
+        Args:
+            states (dict): Shared leader state dictionary.
+            db_engine (Engine): SQLAlchemy database engine.
+        """
+
         super().__init__()
         self.states = states
         self.db_engine = db_engine
 
     def RegisterFollower(self, request, context):
+        """Registers a follower and returns the current database snapshot.
+
+        Args:
+            request (RegisterFollowerRequest): Follower ID and address.
+            context (grpc.ServicerContext): gRPC context.
+
+        Returns:
+            RegisterFollowerResponse: Serialized DB and known followers.
+        """
+
         follower_id = request.follower_id
         follower_address = request.follower_address
         if (follower_id, follower_address) not in self.states['followers']:
@@ -475,9 +617,29 @@ class LeaderService(spec_pb2_grpc.LeaderServiceServicer):
         return response
 
     def HeartBeat(self, request, context):
+        """Responds to heartbeat checks from followers.
+
+        Args:
+            request (Empty): Empty message.
+            context (grpc.ServicerContext): gRPC context.
+
+        Returns:
+            Ack: Acknowledgment response.
+        """
+
         return spec_pb2.Ack(error_code=0, error_message="")
 
     def CheckLeader(self, request, context):
+        """Confirms that this node is the current leader.
+
+        Args:
+            request (Empty): Empty message.
+            context (grpc.ServicerContext): gRPC context.
+
+        Returns:
+            Ack: Acknowledgment response.
+        """
+
         return spec_pb2.Ack(error_code=0, error_message="")
 
 
@@ -489,6 +651,14 @@ table_class_mapping = {
 
 
 def serve_leader_client(leader_state):
+    """Starts the gRPC server for handling client requests.
+
+    Args:
+        leader_state (dict): Dictionary containing leader server state.
+
+    Returns:
+        grpc.Server: The gRPC server object.
+    """
     db_session, address, update_queue, client_address = leader_state['db_session'], leader_state[
         'leader_address'], leader_state['update_queue'], leader_state['client_address']
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
@@ -503,6 +673,14 @@ def serve_leader_client(leader_state):
 
 
 def serve_leader_follower(leader_state):
+    """Starts the gRPC server for inter-leader/follower communication.
+
+    Args:
+        leader_state (dict): Dictionary containing leader server state.
+
+    Returns:
+        grpc.Server: The gRPC server object.
+    """
     address, db_engine = leader_state['leader_address'], leader_state['db_engine']
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=20))
@@ -515,6 +693,14 @@ def serve_leader_follower(leader_state):
 
 
 def get_update_data(update_queue):
+    """Fetches the next item from the update queue, if available.
+
+    Args:
+        update_queue (queue.Queue): The update queue.
+
+    Returns:
+        Any: The next update item or None if the queue is empty.
+    """
     try:
         data = update_queue.get(block=False)
         return data
@@ -523,7 +709,11 @@ def get_update_data(update_queue):
 
 
 def update_followers(leader_state):
+    """Continuously sends updates from the queue to all followers.
 
+    Args:
+        leader_state (dict): Dictionary containing leader server state.
+    """
     while True:
         follower_addresses = leader_state['followers']
         update_queue = leader_state['update_queue']

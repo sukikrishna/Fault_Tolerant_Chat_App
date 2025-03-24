@@ -7,6 +7,8 @@ import functools
 
 
 class reconnect_on_error:
+    """Decorator to automatically reconnect and retry gRPC calls if the server is unavailable."""
+
     def __init__(self, method):
         self.method = method
 
@@ -16,6 +18,8 @@ class reconnect_on_error:
         return functools.partial(self.__call__, instance)
 
     def __call__(self, instance, *args, **kwargs):
+        """Handles retry logic when a gRPC error occurs."""
+
         try:
             return self.method(instance, *args, **kwargs)
         except grpc.RpcError as e:
@@ -45,6 +49,8 @@ class ChatClientBase:
         pass
 
     def connect(self):
+        """Tries to connect to the leader server and establish a gRPC stub. Falls back to other addresses if needed."""
+
         # breakpoint()
         with self.lock:
             # Check the connection using a simple request like ListUsers
@@ -114,6 +120,15 @@ class ChatClientBase:
 
     @reconnect_on_error
     def list_users(self, wildcard="*"):
+        """Fetches a list of users matching the given wildcard.
+
+        Args:
+            wildcard (str): Username pattern. Defaults to "*".
+
+        Returns:
+            List[User]: A list of user objects.
+        """
+
         request = spec_pb2.ListUsersRequest(wildcard=wildcard)
         response = self.stub.ListUsers(request)
         return response.user
@@ -121,54 +136,129 @@ class ChatClientBase:
 
     @reconnect_on_error
     def create_account(self, username, password):
+        """Creates a new user account.
+
+        Args:
+            username (str): Desired username.
+            password (str): Desired password.
+
+        Returns:
+            ServerResponse: gRPC server response.
+        """
+
         response = self.stub.CreateAccount(
             spec_pb2.CreateAccountRequest(username=username, password=password))
         return response
 
     @reconnect_on_error
     def login(self, username, password):
+        """Logs the user in and retrieves a session ID.
+
+        Args:
+            username (str): Account username.
+            password (str): Account password.
+
+        Returns:
+            ServerResponse: gRPC server response.
+        """
+
         response = self.stub.Login(
             spec_pb2.LoginRequest(username=username, password=password))
         return response
 
     @reconnect_on_error
     def send_message(self, to, message):
+        """Sends a message to another user.
+
+        Args:
+            to (str): Recipient username.
+            message (str): Message content.
+
+        Returns:
+            ServerResponse: gRPC server response.
+        """
+
         response = self.stub.Send(
             spec_pb2.SendRequest(session_id=self.user_session_id, message=message, to=to))
         return response
 
     @reconnect_on_error
     def logout(self):
+        """Logs out the current user session.
+
+        Returns:
+            ServerResponse: gRPC server response.
+        """
+
         response = self.stub.Logout(
             spec_pb2.DeleteAccountRequest(session_id=self.user_session_id))
         return response
 
     @reconnect_on_error
     def delete_account(self):
+        """Deletes the currently logged-in user's account.
+
+        Returns:
+            ServerResponse: gRPC server response.
+        """
+
         response = self.stub.DeleteAccount(
             spec_pb2.DeleteAccountRequest(session_id=self.user_session_id))
         return response
 
     @reconnect_on_error
     def receive_messages(self):
+        """Retrieves unread messages for the logged-in user.
+
+        Returns:
+            Messages: A message list from the server.
+        """
+
         msgs = self.stub.GetMessages(
             spec_pb2.ReceiveRequest(session_id=self.user_session_id))
         return msgs
 
     @reconnect_on_error
     def acknowledge_received_messages(self, message_ids):
+        """Acknowledges messages as received so they won't be returned again.
+
+        Args:
+            message_ids (List[int]): List of message IDs.
+
+        Returns:
+            ServerResponse: gRPC server response.
+        """
+
         ack_response = self.stub.AcknowledgeReceivedMessages(
             spec_pb2.AcknowledgeRequest(session_id=self.user_session_id, message_ids=message_ids))
         return ack_response
 
     @reconnect_on_error
     def get_chat(self, recipient):
+        """Retrieves full chat history with a specific user.
+
+        Args:
+            recipient (str): Username of the chat partner.
+
+        Returns:
+            Messages: A list of all messages between the two users.
+        """
+
         msgs = self.stub.GetChat(
             spec_pb2.ChatRequest(session_id=self.user_session_id, username=recipient))
         return msgs
     
     @reconnect_on_error
     def delete_messages(self, message_ids):
+        """Deletes specific messages by ID.
+
+        Args:
+            message_ids (List[int]): List of message IDs to delete.
+
+        Returns:
+            ServerResponse: gRPC server response.
+        """
+
         request = spec_pb2.DeleteMessagesRequest(
             session_id=self.user_session_id,
             message_ids=message_ids

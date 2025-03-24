@@ -20,9 +20,12 @@ class ChatClientTerminal(cmd.Cmd):
     prompt = "Chat> "
 
     def __init__(self, port):
+        """Initializes the terminal-based chat client.
+
+        Args:
+            port (int): Port to connect to the gRPC server.
         """
-        Initialize the Chat_Client instance, setting up the gRPC channel, stub, and displaying help message.
-        """
+
         super(ChatClientTerminal, self).__init__()
 
         self.user_session_id = ""
@@ -41,9 +44,12 @@ class ChatClientTerminal(cmd.Cmd):
             print("=>", user.username, "[", user.status, "]")
 
     def do_create(self, arg):
+        """Creates a new user account.
+
+        Args:
+            arg (str): Command-line input with format "<username> <password>".
         """
-        Create a new user account with the provided username and password.
-        """
+
         args = arg.split(" ")
         if (len(args) < 2):
             print("Invalid Arguments to command")
@@ -57,9 +63,12 @@ class ChatClientTerminal(cmd.Cmd):
         print(response.error_message)
 
     def do_login(self, arg):
+        """Logs in to an existing user account.
+
+        Args:
+            arg (str): Command-line input with format "<username> <password>".
         """
-        Log in to an existing user account with the provided username and password.
-        """
+
         args = arg.split(" ")
         if (len(args) < 2):
             print("Invalid Arguments to command")
@@ -76,9 +85,12 @@ class ChatClientTerminal(cmd.Cmd):
         print(response.error_message)
 
     def do_send(self, arg):
+        """Sends a message to another user.
+
+        Args:
+            arg (str): Command-line input with format "<username> <message...>".
         """
-        Send a message to another user.
-        """
+
         args = arg.split(" ")
         if (len(args) < 2):
             print("Invalid Arguments to command")
@@ -92,9 +104,15 @@ class ChatClientTerminal(cmd.Cmd):
         print(response.error_message)
 
     def do_logout(self, arg):
+        """Logs the user out of the chat system.
+
+        Args:
+            arg (str): Unused.
+
+        Returns:
+            ServerResponse: gRPC response object.
         """
-        Log out from the current user account.
-        """
+
         response = self.stub.Logout(
             spec_pb2.DeleteAccount(session_id=self.user_session_id))
         if response.error_code == 0:
@@ -103,26 +121,38 @@ class ChatClientTerminal(cmd.Cmd):
         return response
 
     def do_exit(self, arg):
+        """Closes the client and exits the application.
+
+        Args:
+            arg (str): Unused.
         """
-        Close the gRPC channel and exit the application.
-        """
+
         # close the channel
         self.channel.close()
         quit()
 
     def do_delete(self, arg):
+        """Deletes the current user account.
+
+        Args:
+            arg (str): Unused.
+
+        Returns:
+            ServerResponse: gRPC response object.
         """
-        Delete the current user account.
-        """
+
         response = self.stub.DeleteAccount(
             spec_pb2.DeleteAccountRequest(session_id=self.user_session_id))
         print(response.error_message)
         return response
 
     def do_help(self, arg):
+        """Displays help messages for commands.
+
+        Args:
+            arg (str): Optional command name to get help for.
         """
-        Display help information for the specified command or general help if no command is specified.
-        """
+
         if arg == "list":
             print(HelpMessages.HELP_LIST)
         elif arg == "create":

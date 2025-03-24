@@ -15,6 +15,12 @@ from leader_server import *
 
 
 def claim_leadery(leader_state):
+    """Notifies all followers that this server is now the leader.
+
+    Args:
+        leader_state (dict): State dictionary containing follower addresses and leader info.
+    """
+
     """Informs all the followers that this server has become the new leader
     wathcout for competing leaders problem"""
     leader_id, leader_address = leader_state['leader_id'], leader_state['leader_address']
@@ -33,6 +39,11 @@ def claim_leadery(leader_state):
 
 
 def upgrade_follower(old_state):
+    """Promotes a follower to a leader by initializing leader services.
+
+    Args:
+        old_state (dict): Current follower state to be upgraded.
+    """
     # Upgrade the follower to a leader
     # Start the leader server
     # Start the follower server
@@ -71,6 +82,12 @@ def upgrade_follower(old_state):
 
 
 def check_new_leader(min_follower, follower_state):
+    """Checks if the new leader is alive and updates follower state accordingly.
+
+    Args:
+        min_follower (tuple): (ID, address) of the assumed new leader.
+        follower_state (dict): The current follower state dictionary.
+    """
 
     with grpc.insecure_channel(min_follower[1]) as channel:
         num_tries = 2
@@ -101,6 +118,11 @@ def check_new_leader(min_follower, follower_state):
 
 
 def follower_heart_beat_checker(follower_state):
+    """Periodically checks if the leader is alive and initiates election if not.
+
+    Args:
+        follower_state (dict): The current follower state dictionary.
+    """
 
     while True:
         leader_address = follower_state['leader_address']
@@ -151,6 +173,15 @@ def follower_heart_beat_checker(follower_state):
 def leader_routine(
     server_id, internal_address, client_address, leader_address=None
 ):
+    """Bootstraps the leader server and its components.
+
+    Args:
+        server_id (str): Unique server identifier.
+        internal_address (str): gRPC address for internal leader-follower communication.
+        client_address (str): gRPC address for client-leader communication.
+        leader_address (str, optional): Address of current leader (unused for leaders).
+    """
+
     database_url = f'sqlite:///chat_{server_id}.db'
     database_engine = init_db(database_url)
 
@@ -183,6 +214,15 @@ def leader_routine(
 
 
 def follower_routine(server_id, internal_address, client_address, leader_address=None):
+    """Bootstraps the follower server, registers with leader, and starts heartbeat thread.
+
+    Args:
+        server_id (str): Unique server identifier.
+        internal_address (str): Address used for internal leader-follower communication.
+        client_address (str): gRPC address for client-follower communication.
+        leader_address (str): Address of the current leader.
+    """
+
     database_url = f'sqlite:///chat_{server_id}.db'
     database_engine = init_db(database_url, drop_tables=True)
 
