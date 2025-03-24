@@ -35,6 +35,8 @@ service ClientAccount {
   rpc Logout(DeleteAccountRequest) returns (ServerResponse);
 
   rpc DeleteMessages(DeleteMessagesRequest) returns(ServerResponse);
+
+  rpc GetUnreadCounts(SessionRequest) returns (UnreadSummary);
 }
 
 // Request message for creating an account
@@ -79,6 +81,21 @@ message DeleteMessagesRequest {
   repeated int32 message_ids = 2;
 }
 
+
+message UnreadCount {
+  string from = 1;
+  int32 count = 2;
+}
+
+message UnreadSummary {
+  repeated UnreadCount counts = 1;
+  int32 error_code = 2;
+  string error_message = 3;
+}
+
+message SessionRequest {
+  string session_id = 1;
+}
 
 // Request message for receiving messages
 message ReceiveRequest { string session_id = 1; }

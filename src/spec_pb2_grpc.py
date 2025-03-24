@@ -85,6 +85,11 @@ class ClientAccountStub(object):
                 request_serializer=spec__pb2.DeleteMessagesRequest.SerializeToString,
                 response_deserializer=spec__pb2.ServerResponse.FromString,
                 _registered_method=True)
+        self.GetUnreadCounts = channel.unary_unary(
+                '/ClientAccount/GetUnreadCounts',
+                request_serializer=spec__pb2.SessionRequest.SerializeToString,
+                response_deserializer=spec__pb2.UnreadSummary.FromString,
+                _registered_method=True)
 
 
 class ClientAccountServicer(object):
@@ -164,6 +169,12 @@ class ClientAccountServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetUnreadCounts(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ClientAccountServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -216,6 +227,11 @@ def add_ClientAccountServicer_to_server(servicer, server):
                     servicer.DeleteMessages,
                     request_deserializer=spec__pb2.DeleteMessagesRequest.FromString,
                     response_serializer=spec__pb2.ServerResponse.SerializeToString,
+            ),
+            'GetUnreadCounts': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetUnreadCounts,
+                    request_deserializer=spec__pb2.SessionRequest.FromString,
+                    response_serializer=spec__pb2.UnreadSummary.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -489,6 +505,33 @@ class ClientAccount(object):
             '/ClientAccount/DeleteMessages',
             spec__pb2.DeleteMessagesRequest.SerializeToString,
             spec__pb2.ServerResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetUnreadCounts(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/ClientAccount/GetUnreadCounts',
+            spec__pb2.SessionRequest.SerializeToString,
+            spec__pb2.UnreadSummary.FromString,
             options,
             channel_credentials,
             insecure,

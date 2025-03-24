@@ -472,6 +472,42 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         session.remove()
 
         return msgs
+    
+
+    def GetUnreadCounts(self, request, context):
+        """Returns unread message count per sender without marking them as read."""
+        from spec_pb2 import UnreadSummary, UnreadCount
+
+        summary = UnreadSummary()
+        session = scoped_session(self.db_session)
+
+        user = session.query(UserModel).filter_by(session_id=request.session_id).first()
+        if not user:
+            summary.error_code = StatusCode.USER_NOT_LOGGED_IN
+            summary.error_message = StatusMessages.get_error_message(summary.error_code)
+            session.remove()
+            return summary
+
+        from sqlalchemy import func
+        results = session.query(
+            UserModel.username,
+            func.count(MessageModel.id)
+        ).join(UserModel, UserModel.id == MessageModel.sender_id
+        ).filter(
+            MessageModel.receiver_id == user.id,
+            MessageModel.sender_id != user.id,  # exclude self-messages
+            MessageModel.is_received == False
+        ).group_by(UserModel.username).all()
+
+
+        for sender, count in results:
+            summary.counts.append(UnreadCount(**{"from": sender, "count": count}))
+
+        summary.error_code = StatusCode.SUCCESS
+        summary.error_message = "Unread counts fetched."
+        session.remove()
+        return summary
+
 
     def DeleteAccount(self, request, context):
         """Deletes the current user's account and related messages.

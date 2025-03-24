@@ -265,3 +265,11 @@ class ChatClientBase:
         )
         response = self.stub.DeleteMessages(request)
         return response
+    
+    @reconnect_on_error
+    def get_unread_counts(self):
+        """Fetches count of unread messages grouped by sender."""
+        response = self.stub.GetUnreadCounts(
+            spec_pb2.SessionRequest(session_id=self.user_session_id)
+        )
+        return response
