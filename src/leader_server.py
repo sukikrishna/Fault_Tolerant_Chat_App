@@ -750,8 +750,8 @@ def update_followers(leader_state):
     Args:
         leader_state (dict): Dictionary containing leader server state.
     """
-    
-    time.sleep(3)
+
+    time.sleep(5)
 
     while True:
         follower_addresses = leader_state['followers']
