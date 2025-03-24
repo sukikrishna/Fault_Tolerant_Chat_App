@@ -210,32 +210,28 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         separator = ttk.Separator(chat_frame, orient="horizontal")
         separator.pack(side=tk.TOP, padx=5, pady=5, fill=tk.X)
 
-        # Create chat display area
-        # self.chat_text = scrolledtext.ScrolledText(
-        #     chat_frame, wrap=tk.WORD, state='disabled')
-        # self.chat_text.pack(fill=tk.BOTH, expand=True)
-
-        # Container for message frames
         self.chat_canvas = tk.Canvas(chat_frame)
         self.chat_scrollbar = ttk.Scrollbar(chat_frame, orient="vertical", command=self.chat_canvas.yview)
         self.chat_frame_inner = ttk.Frame(self.chat_canvas)
 
+        # Add content window to canvas
+        self.chat_window = self.chat_canvas.create_window((0, 0), window=self.chat_frame_inner, anchor="nw", tags="inner")
+
+        # Resize inner frame when canvas resizes
+        def resize_inner(event):
+            self.chat_canvas.itemconfig("inner", width=event.width)
+
+        self.chat_canvas.bind("<Configure>", resize_inner)
+
+        # Update scrollregion when content changes
         self.chat_frame_inner.bind(
             "<Configure>",
             lambda e: self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
         )
 
-        self.chat_canvas.create_window((0, 0), window=self.chat_frame_inner, anchor="nw")
-        self.chat_canvas.configure(yscrollcommand=self.chat_scrollbar.set)
-
+        self.chat_canvas.configure(yscrollcommand=self.chat_scrollbar.set, takefocus=0)
         self.chat_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.chat_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-
-
-        # WhatsApp-style alignment tags
-        # self.chat_text.tag_configure('left', justify='left', foreground='red')
-        # self.chat_text.tag_configure('right', justify='right', foreground='green')
 
         # Create message input field and send button
         self.message_entry = ttk.Entry(message_frame)
@@ -389,7 +385,20 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             response = ChatClientBase.send_message(self, to, message)
             if response.error_code == 0:
                 self.message_entry.delete(0, tk.END)
-                self.load_chat_history(to)
+
+                # Create and display only the new message frame
+                current_user = self.logged_in_label.cget("text").replace("Logged in as: ", "")
+                message_data = {
+                    "id": -1,  # dummy ID since server doesn't send it back
+                    "from": "You",
+                    "content": message,
+                    "timestamp": int(time.time())
+                }
+                msg_frame = MessageFrame(self.chat_frame_inner, message_data)
+                msg_frame.pack(fill='x', pady=2, padx=5, anchor='e')
+                self.chat_canvas.update_idletasks()
+                self.chat_canvas.yview_moveto(1.0)
+
             else:
                 messagebox.showerror("Error", response.error_message)
         else:

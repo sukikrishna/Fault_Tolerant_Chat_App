@@ -22,6 +22,7 @@ class MessageFrame(ttk.Frame):
         
         header_frame = ttk.Frame(self)
         header_frame.pack(fill='x', expand=True)
+        self.pack(fill='x', expand=True)
         
         self.select_var = tk.BooleanVar()
         select_cb = ttk.Checkbutton(header_frame, variable=self.select_var)
