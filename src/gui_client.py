@@ -37,10 +37,10 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         user_list_update_thread.daemon = True
         user_list_update_thread.start()
 
-        # chat_update_thread = threading.Thread(
-        #     target=self.update_chat)
-        # chat_update_thread.daemon = True
-        # chat_update_thread.start()
+        chat_update_thread = threading.Thread(
+            target=self.update_chat)
+        chat_update_thread.daemon = True
+        chat_update_thread.start()
 
         notification_update_thread = threading.Thread(
             target=self.update_notification)
@@ -570,16 +570,52 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
             time.sleep(3)
 
+    def refresh_chat(self, response):
+        """Updates the chat display with new messages from server response."""
+        self.clear_chat()
+        current_user = self.logged_in_label.cget("text").replace("Logged in as: ", "")
+        for message in response.message:
+            is_self = message.from_ == current_user
+            message_data = {
+                "id": message.message_id,
+                "from": message.from_,
+                "content": message.message,
+                "timestamp": message.time_stamp.seconds
+            }
+
+            msg_frame = MessageFrame(self.chat_frame_inner, message_data)
+            msg_frame.pack(fill='x', pady=2, padx=5, anchor='e' if is_self else 'w')
+
+        self.chat_canvas.update_idletasks()
+        chat_bbox = self.chat_canvas.bbox("all")
+        view_height = self.chat_canvas.winfo_height()
+        if chat_bbox and chat_bbox[3] > view_height:
+            self.chat_canvas.yview_moveto(1.0)
+        else:
+            self.chat_canvas.yview_moveto(0.0)
+
 
     def update_chat(self):
-        """(Unused) Intended background thread to update chat history regularly."""
+        """Continuously checks and updates current chat window if new messages arrive."""
+        last_seen_message_ids = set()
 
         while True:
-            # here it might be a good idea
-            # to only load a certain amount of messages
-            # and have that built in capability on the server side as well
-            self.load_chat_history(self.recipient_var.get())
+            recipient = self.recipient_var.get()
+            if self.user_session_id and recipient:
+                try:
+                    response = ChatClientBase.get_chat(self, recipient)
+
+                    if response and response.error_code == 0:
+                        current_ids = {msg.message_id for msg in response.message}
+                        if current_ids != last_seen_message_ids:
+                            self.after(0, lambda: self.refresh_chat(response))
+                            last_seen_message_ids = current_ids
+
+                except Exception as e:
+                    print("Chat update error:", e)
+
             time.sleep(1)
+
 
     def update_user_list(self, interval=0):
         """Background thread that periodically updates the user list.
