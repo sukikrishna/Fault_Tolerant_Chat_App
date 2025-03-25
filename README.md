@@ -125,3 +125,31 @@ To test replication by crashing the servers:
 
 - Linux: `Ctrl+C`
 - Windows: `Fn+Ctrl+B`
+
+
+## Test Coverage and Documentation
+This project is thoroughly tested and documented. 
+
+The code was tested using `pytest`. Run the tests from project root:
+
+```
+PYTHONPATH=src pytest tests/ --cov=src --cov-config=.coveragerc
+```
+
+Here's the latest code coverage summary for the core application:
+
+| Name                    | Stmts | Miss | Cover |
+|-------------------------|-------|------|-------|
+| `src/__init__.py`       | 0     | 0    | 100%  |
+| `src/base_client.py`    | 129   | 25   | 81%   |
+| `src/follower_server.py`| 145   | 12   | 92%   |
+| `src/leader_server.py`  | 310   | 62   | 80%   |
+| `src/message_frame.py`  | 19    | 0    | 100%  |
+| `src/models.py`         | 42    | 1    | 98%   |
+| `src/server.py`         | 120   | 15   | 88%   |
+| `src/terminal_client.py`| 95    | 19   | 80%   |
+| `src/utils.py`          | 34    | 0    | 100%  |
+| **TOTAL**               | 894   | 134  | **85%** |
+
+All  classes and methods are documented with Google-style docstrings.
+
