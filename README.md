@@ -162,4 +162,3 @@ make html   # or on Windows: .\make.bat html
 ````
 
 The generated docs ca be found at `build/html/index`.
-
