@@ -1,7 +1,21 @@
 import pytest
 from unittest.mock import patch, MagicMock
 import server
+from server import leader_routine, follower_routine, claim_leadery, upgrade_follower
 
+@pytest.fixture
+def mock_leader_state():
+    """
+    Pytest fixture for a leader state dictionary with minimal defaults.
+
+    Returns:
+        dict: Mock leader state structure.
+    """
+    return {
+        'leader_id': 'leader1',
+        'leader_address': 'localhost:50051',
+        'followers': [('f2', 'localhost:60051')],
+    }
 
 @pytest.fixture
 def follower_state():
@@ -177,3 +191,16 @@ def test_check_new_leader_handles_exceptions(follower_state):
     with patch("builtins.print") as mock_print:
         server.check_new_leader(min_follower, follower_state)
         mock_print.assert_any_call("New leader is dead")
+
+
+def test_leader_routine():
+    """
+    Tests leader_routine to ensure it initializes the leader's DB, starts servers, and blocks on termination.
+    """
+    with patch('server.serve_leader_follower') as mock_lf, \
+         patch('server.serve_leader_client') as mock_lc, \
+         patch('server.init_db'), \
+         patch('server.get_session_factory'):
+        leader_routine("server_id", "localhost:70051", "localhost:80051")
+        mock_lf.assert_called_once()
+        mock_lc.assert_called_once()

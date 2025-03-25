@@ -1,11 +1,18 @@
 import pytest
-import leader_server as server
+import leader_server as leader_server
 from unittest.mock import MagicMock, patch
 from leader_server import ClientService
 from models import UserModel
 from google.protobuf.timestamp_pb2 import Timestamp
 from datetime import datetime
-
+from spec_pb2 import Ack
+from leader_server import (
+    serve_leader_client,
+    serve_leader_follower,
+    update_followers,
+    fetch_all_data_from_orm,
+    LeaderService
+)
 
 @pytest.fixture
 def mock_session():
@@ -18,6 +25,27 @@ def client_service(mock_session):
     """Creates the ClientService instance with mocked DB and update queue."""
     return ClientService(db_session=MagicMock(return_value=mock_session), update_queue=MagicMock())
 
+
+@pytest.fixture
+def mock_leader_state(tmp_path):
+    """
+    Pytest fixture providing a leader state dictionary.
+
+    Args:
+        tmp_path (Path): Temporary path for DB files.
+
+    Returns:
+        dict: A mock leader state.
+    """
+    return {
+        'leader_id': 'leader1',
+        'leader_address': 'localhost:50051',
+        'followers': [],
+        'db_engine': MagicMock(),
+        'db_session': MagicMock(),
+        'update_queue': MagicMock(),
+        'client_address': 'localhost:60051'
+    }
 
 def test_create_account_new_user(client_service):
     """Tests creating a new account when username doesn't exist."""
@@ -306,8 +334,7 @@ def test_delete_messages_invalid_user(client_service):
 
 def test_heartbeat_returns_ack(client_service):
     """Tests that HeartBeat returns a success Ack."""
-    from spec_pb2 import Ack
-    service = server.LeaderService({}, db_engine=MagicMock())
+    service = leader_server.LeaderService({}, db_engine=MagicMock())
     response = service.HeartBeat(MagicMock(), MagicMock())
     assert isinstance(response, Ack)
     assert response.error_code == 0
@@ -315,8 +342,7 @@ def test_heartbeat_returns_ack(client_service):
 
 def test_check_leader_ack(client_service):
     """Tests CheckLeader response."""
-    from spec_pb2 import Ack
-    service = server.LeaderService({}, db_engine=MagicMock())
+    service = leader_server.LeaderService({}, db_engine=MagicMock())
     response = service.CheckLeader(MagicMock(), MagicMock())
     assert isinstance(response, Ack)
     assert response.error_code == 0
@@ -324,11 +350,11 @@ def test_check_leader_ack(client_service):
 
 def test_register_follower_adds_if_new(client_service):
     """Tests RegisterFollower adds new follower if unknown."""
-    service = server.LeaderService({"followers": []}, db_engine=MagicMock())
+    service = leader_server.LeaderService({"followers": []}, db_engine=MagicMock())
 
-    with patch("server.pickle.dumps", return_value=b"abc"), \
-         patch("server.grpc.insecure_channel"), \
-         patch("server.spec_pb2_grpc.FollowerServiceStub"):
+    with patch("leader_server.pickle.dumps", return_value=b"abc"), \
+         patch("leader_server.grpc.insecure_channel"), \
+         patch("leader_server.spec_pb2_grpc.FollowerServiceStub"):
 
         req = MagicMock(follower_id="5", follower_address="localhost:9999")
         resp = service.RegisterFollower(req, MagicMock())
@@ -390,7 +416,7 @@ def test_register_follower_skips_existing():
          patch("leader_server.grpc.insecure_channel"), \
          patch("leader_server.spec_pb2_grpc.FollowerServiceStub") as stub:
         stub.return_value.UpdateFollowers.return_value = MagicMock()
-        service = server.LeaderService(state, db_engine=MagicMock())
+        service = leader_server.LeaderService(state, db_engine=MagicMock())
         resp = service.RegisterFollower(req, MagicMock())
         assert resp.error_code == 0
 
@@ -421,3 +447,75 @@ def test_get_unread_counts_zero(client_service):
     assert resp.error_code == 0
     assert "unread" in resp.error_message.lower()
     assert len(resp.counts) == 0
+
+def test_serve_leader_client(mock_leader_state):
+    """
+    Tests that serve_leader_client initializes the client-facing gRPC server.
+
+    Args:
+        mock_leader_state (dict): Leader state fixture.
+    """
+    server = serve_leader_client(mock_leader_state)
+    assert server is not None
+    server.stop(None)
+
+def test_serve_leader_follower(mock_leader_state):
+    """
+    Tests that serve_leader_follower initializes the follower-facing gRPC server.
+
+    Args:
+        mock_leader_state (dict): Leader state fixture.
+    """
+    server = serve_leader_follower(mock_leader_state)
+    assert server is not None
+    server.stop(None)
+
+@patch("leader_server.fetch_all_data_from_orm", return_value={"users": []})
+@patch("leader_server.pickle.dumps", return_value=b"pickled_db")
+def test_register_follower(mock_dumps, mock_fetch, mock_leader_state):
+    """
+    Tests the RegisterFollower method to ensure it returns pickled DB state 
+    and appends the new follower to leader_state.
+
+    Args:
+        mock_dumps (MagicMock): Mocked pickle.dumps function.
+        mock_fetch (MagicMock): Mocked fetch_all_data_from_orm function.
+        mock_leader_state (dict): Leader state fixture.
+    """
+    service = LeaderService(mock_leader_state, mock_leader_state['db_engine'])
+    request = MagicMock()
+    request.follower_id = "f2"
+    request.follower_address = "localhost:70051"
+
+    context = MagicMock()
+    response = service.RegisterFollower(request, context)
+    assert response.pickled_db == b"pickled_db"
+    assert ("f2", "localhost:70051") in mock_leader_state["followers"]
+
+
+def test_leader_service_heartbeat_check():
+    """
+    Tests that HeartBeat and CheckLeader methods respond with success.
+
+    No real gRPC calls are used. Instead, we instantiate LeaderService 
+    and call methods directly.
+    """
+    service = LeaderService({}, MagicMock())
+    request = MagicMock()
+    context = MagicMock()
+
+    response = service.HeartBeat(request, context)
+    assert response.error_code == 0
+
+    response = service.CheckLeader(request, context)
+    assert response.error_code == 0
+
+def test_fetch_all_data_from_orm():
+    """
+    Tests fetch_all_data_from_orm to confirm it queries the DB via sessionmaker.
+
+    This uses a mock connection to ensure the code path is exercised.
+    """
+    mock_connection = MagicMock()
+    fetch_all_data_from_orm(mock_connection)
+    mock_connection.begin.assert_not_called()

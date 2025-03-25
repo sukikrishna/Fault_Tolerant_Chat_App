@@ -15,6 +15,7 @@ def root():
 
 
 def test_message_frame_creation(root):
+    """Tests if the message frame is created correctly."""
     # Sample message data
     message_data = {
         "id": 1,

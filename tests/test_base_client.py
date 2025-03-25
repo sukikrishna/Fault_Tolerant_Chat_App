@@ -165,6 +165,7 @@ def test_get_unread_counts_success():
         assert resp == mock_response
 
 def test_create_account_retry_on_error():
+    """Tests creating account on retry error."""
     client = ChatClientBase(["localhost:5000"])
     client.user_session_id = "abc"
 
@@ -181,6 +182,7 @@ def test_create_account_retry_on_error():
 
 
 def test_logout_retry_on_unavailable():
+    """Tests logout retry when the status is unavailable."""
     client = ChatClientBase(["localhost:5000"])
     client.user_session_id = "abc"
 
@@ -197,6 +199,49 @@ def test_logout_retry_on_unavailable():
 
 
 def test_exit_method_runs():
-    """Covers the exit_() placeholder method."""
+    """
+    Tests that the exit_ method can be called without error.
+
+    Ensures exit_ is invoked safely, even though it's currently a placeholder.
+    """
     client = ChatClientBase(["localhost:5000"])
     client.exit_()  # Just confirm it runs
+
+
+@patch.object(ChatClientBase, 'connect')
+def test_relogin(mock_connect, client):
+    """
+    Tests relogin logic, verifying behavior when session is maintained or lost.
+
+    Args:
+        mock_connect (MagicMock): Mocked connect method to avoid real gRPC calls.
+        client (ChatClientBase): The fixture-provided client.
+    """
+    client.user_session_id = "fake_session_id"
+    with patch.object(client, 'reconnect_with_session', return_value=True) as mock_reconnect:
+        assert client.relogin() is True
+        mock_reconnect.assert_called_once()
+
+    with patch.object(client, 'reconnect_with_session', return_value=False) as mock_reconnect:
+        assert client.relogin() is False
+        mock_reconnect.assert_called_once()
+
+
+@patch('base_client.grpc.insecure_channel', autospec=True)
+def test_connect_leader_failure(mock_channel, client):
+    """
+    Tests that connect handles leader unavailability by retrying or moving on.
+
+    Args:
+        mock_channel (MagicMock): Mocks the gRPC channel creation.
+        client (ChatClientBase): The fixture-provided client.
+    """
+    # Simulate repeated gRPC errors
+    mock_stub = MagicMock()
+    mock_stub.ListUsers.side_effect = grpc.RpcError(grpc.StatusCode.UNAVAILABLE, "Test error")
+    mock_channel.return_value.__enter__.return_value = mock_stub
+
+    client.stub = mock_stub
+    client.max_retries = 2
+    client.addresses = ["localhost:50051", "localhost:50052"]
+    client.connect()  # Attempt to connect, triggering fallback logic

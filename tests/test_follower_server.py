@@ -4,6 +4,12 @@ import grpc
 import follower_server
 from unittest.mock import MagicMock, patch, create_autospec
 from follower_server import FollowerService, ClientServiceFollower
+from follower_server import (
+    request_update,
+    assign_new_leader,
+    server_follower_leader,
+    serve_follower_client,
+)
 from models import UserModel
 
 
@@ -12,6 +18,26 @@ def mock_db_session():
     """Provides a mocked scoped SQLAlchemy session."""
     return MagicMock()
 
+@pytest.fixture
+def mock_follower_state(tmp_path):
+    """
+    Pytest fixture that returns a dictionary representing follower state.
+
+    Args:
+        tmp_path (Path): Temporary path provided by pytest for storing DB files.
+
+    Returns:
+        dict: A mock follower state.
+    """
+    return {
+        "leader_address": "localhost:50051",
+        "follower_id": "follower1",
+        "follower_address": "localhost:60051",
+        "db_session": MagicMock(),
+        "database_url": str(tmp_path / "test.db"),
+        "followers": [],
+        "client_address": "localhost:70051",
+    }
 
 @pytest.fixture
 def follower_service(mock_db_session):
@@ -227,3 +253,27 @@ def test_process_update_data_handles_missing_attr(follower_service):
         ]
         response = follower_service.AcceptUpdates(MagicMock(update_data=b"bad"), MagicMock())
         assert response.error_code == 0
+
+
+def test_serve_follower_client(mock_follower_state):
+    """
+    Tests that serve_follower_client creates and starts a gRPC server for clients.
+
+    Args:
+        mock_follower_state (dict): The fixture-provided follower state.
+    """
+    server = serve_follower_client(mock_follower_state)
+    assert server is not None
+    server.stop(None)
+
+
+def test_server_follower_leader(mock_follower_state):
+    """
+    Tests that server_follower_leader sets up an internal gRPC server for leader-follower updates.
+
+    Args:
+        mock_follower_state (dict): The fixture-provided follower state.
+    """
+    server = server_follower_leader(mock_follower_state)
+    assert server is not None
+    server.stop(None)

@@ -3,6 +3,7 @@ from utils import StatusCode, StatusMessages, HelpMessages
 
 
 def test_status_messages_mapping():
+    """Tests the mapping of the status messages."""
     for code in StatusMessages.error_dict:
         msg = StatusMessages.get_error_message(code)
         assert isinstance(msg, str)
@@ -10,6 +11,7 @@ def test_status_messages_mapping():
 
 
 def test_help_messages():
+    """Tests all the help messages."""
     assert isinstance(HelpMessages.HELP_MSG, str)
     assert "create" in HelpMessages.HELP_MSG
 
