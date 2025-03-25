@@ -25,7 +25,6 @@ class ChatClientTerminal(cmd.Cmd):
         Args:
             port (int): Port to connect to the gRPC server.
         """
-
         super(ChatClientTerminal, self).__init__()
 
         self.user_session_id = ""
@@ -49,7 +48,6 @@ class ChatClientTerminal(cmd.Cmd):
         Args:
             arg (str): Command-line input with format "<username> <password>".
         """
-
         args = arg.split(" ")
         if (len(args) < 2):
             print("Invalid Arguments to command")
@@ -68,7 +66,6 @@ class ChatClientTerminal(cmd.Cmd):
         Args:
             arg (str): Command-line input with format "<username> <password>".
         """
-
         args = arg.split(" ")
         if (len(args) < 2):
             print("Invalid Arguments to command")
@@ -90,7 +87,6 @@ class ChatClientTerminal(cmd.Cmd):
         Args:
             arg (str): Command-line input with format "<username> <message...>".
         """
-
         args = arg.split(" ")
         if (len(args) < 2):
             print("Invalid Arguments to command")
@@ -112,7 +108,6 @@ class ChatClientTerminal(cmd.Cmd):
         Returns:
             ServerResponse: gRPC response object.
         """
-
         response = self.stub.Logout(
             spec_pb2.DeleteAccount(session_id=self.user_session_id))
         if response.error_code == 0:
@@ -126,7 +121,6 @@ class ChatClientTerminal(cmd.Cmd):
         Args:
             arg (str): Unused.
         """
-
         # close the channel
         self.channel.close()
         quit()
@@ -140,7 +134,6 @@ class ChatClientTerminal(cmd.Cmd):
         Returns:
             ServerResponse: gRPC response object.
         """
-
         response = self.stub.DeleteAccount(
             spec_pb2.DeleteAccountRequest(session_id=self.user_session_id))
         print(response.error_message)
@@ -152,7 +145,6 @@ class ChatClientTerminal(cmd.Cmd):
         Args:
             arg (str): Optional command name to get help for.
         """
-
         if arg == "list":
             print(HelpMessages.HELP_LIST)
         elif arg == "create":

@@ -22,7 +22,6 @@ import queue
 from follower_server import *
 import fnmatch
 
-
 import hashlib
 
 def hash_password(password):
@@ -52,7 +51,6 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
             db_session (SessionFactory): SQLAlchemy session factory.
             update_queue (Queue): Queue to send update events to followers.
         """
-
         super().__init__()
         self.db_session = db_session
         self.update_queue = update_queue
@@ -67,7 +65,6 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         Returns:
             ServerResponse: Response indicating success or failure.
         """
-
         session = scoped_session(self.db_session)
         context.set_code(grpc.StatusCode.OK)
 
@@ -80,8 +77,7 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
             # create a new user
             hashed_password = hash_password(request.password)
             new_user = UserModel(username=request.username, password=hashed_password)
-            # new_user = UserModel(username=request.username,
-            #                      password=request.password)
+
             session.add(new_user)
             session.commit()
             status_code = StatusCode.SUCCESS
@@ -93,7 +89,6 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
 
             fully_load(added_user)
             update_info = pickle.dumps(('users', 'add', added_user))
-            # create_update_info("add", added_user, 'users')
 
             self.update_queue.put(update_info)
 
@@ -110,7 +105,6 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         Returns:
             ServerResponse: Includes session ID if login is successful.
         """
-
         context.set_code(grpc.StatusCode.OK)
         session = scoped_session(self.db_session)
         user = session.query(UserModel).filter_by(
@@ -151,7 +145,6 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         Returns:
             ServerResponse: Indicates whether the message was sent successfully.
         """
-
         context.set_code(grpc.StatusCode.OK)
 
         session_id = request.session_id
@@ -185,35 +178,16 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
                 msg2 = session.query(MessageModel).filter_by(
                     id=msg.id).first()
 
-                # print("before updating followers")
                 fully_load(msg2)
                 update_info = pickle.dumps(('messages', "add", msg2))
-                # print(update_info)
                 try:
                     self.update_queue.put(update_info)
                 except Exception as e:
                     print(e)
         # Remove any remaining session
         session.remove()
-        # print("responding with server response")
         return spec_pb2.ServerResponse(error_code=status_code, error_message=status_message)
 
-    # def ListUsers(self, request, context):
-    #     context.set_code(grpc.StatusCode.OK)
-    #     users = spec_pb2.Users()
-
-    #     session = scoped_session(self.db_session)
-    #     all_users = session.query(UserModel).all()
-
-    #     for user in all_users:
-    #         user_ = users.user.add()
-    #         user_.username = user.username
-    #         user_.status = "online" if user.logged_in else "offline"
-
-    #     # Remove any remaining session
-    #     session.remove()
-
-    #     return users
 
     def ListUsers(self, request, context):
         """Returns a list of users matching the optional wildcard.
@@ -225,7 +199,6 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         Returns:
             Users: A list of users and their online statuses.
         """
-
         context.set_code(grpc.StatusCode.OK)
         users = spec_pb2.Users()
         pattern = request.wildcard if request.wildcard else "*"
@@ -253,7 +226,6 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         Returns:
             ServerResponse: Indicates success or failure.
         """
-
         session = scoped_session(self.db_session)
         user = session.query(UserModel).filter_by(session_id=request.session_id).first()
 
@@ -309,7 +281,6 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         Returns:
             Messages: List of unread messages.
         """
-
         context.set_code(grpc.StatusCode.OK)
 
         msgs = spec_pb2.Messages()
@@ -358,7 +329,6 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         Returns:
             ServerResponse: Acknowledgement result.
         """
-
         session = scoped_session(self.db_session)
         user = session.query(UserModel).filter_by(
             session_id=request.session_id).first()
@@ -374,18 +344,6 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
 
             for message in messages:
                 message.is_received = True
-
-                # stop deleting messages
-                # Move the message to the deleted_messages table
-                # deleted_message = DeletedMessageModel(
-                #     sender_id=message.sender_id,
-                #     receiver_id=message.receiver_id,
-                #     content=message.content,
-                #     is_received=message.is_received,
-                #     original_message_id=message.id,
-                # )
-                # session.add(deleted_message)
-                # session.delete(message)
 
             session.commit()
             status_code = StatusCode.SUCCESS
@@ -405,7 +363,6 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         Returns:
             ServerResponse: Logout result.
         """
-
         session = scoped_session(self.db_session)
         user = session.query(UserModel).filter_by(
             session_id=request.session_id).first()
@@ -434,7 +391,6 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         Returns:
             Messages: List of messages with timestamps.
         """
-
         context.set_code(grpc.StatusCode.OK)
 
         msgs = spec_pb2.Messages()
@@ -532,7 +488,6 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
         Returns:
             ServerResponse: Result of the deletion.
         """
-
         session = scoped_session(self.db_session)
         user = session.query(UserModel).filter_by(
             session_id=request.session_id).first()
@@ -613,7 +568,6 @@ class LeaderService(spec_pb2_grpc.LeaderServiceServicer):
             states (dict): Shared leader state dictionary.
             db_engine (Engine): SQLAlchemy database engine.
         """
-
         super().__init__()
         self.states = states
         self.db_engine = db_engine
@@ -628,12 +582,10 @@ class LeaderService(spec_pb2_grpc.LeaderServiceServicer):
         Returns:
             RegisterFollowerResponse: Serialized DB and known followers.
         """
-
         follower_id = request.follower_id
         follower_address = request.follower_address
         if (follower_id, follower_address) not in self.states['followers']:
             self.states['followers'].append((follower_id, follower_address))
-        # print(self.states)
 
         # Fetch and pickle the data from ORM objects
         with self.db_engine.begin() as connection:
@@ -643,11 +595,9 @@ class LeaderService(spec_pb2_grpc.LeaderServiceServicer):
 
         other_followers = [
             f"{follower[0]}-{follower[1]}" for follower in self.states['followers'] if follower[0] != follower_id]
-        # print(other_followers)
         # inform other followers about this new follower
         for follower in other_followers:
             saddress = follower.split("-")[1]
-            # print(follower, saddress)
             with grpc.insecure_channel(saddress) as channel:
                 stub = spec_pb2_grpc.FollowerServiceStub(channel)
                 # print(channel, stub)
@@ -661,8 +611,6 @@ class LeaderService(spec_pb2_grpc.LeaderServiceServicer):
             pickled_db=pickled_data,
             other_followers=other_followers
         )
-        # print("Follower {} registered {} resp {}".format(follower_id, request.follower_address, response))
-
         return response
 
     def HeartBeat(self, request, context):
@@ -675,7 +623,6 @@ class LeaderService(spec_pb2_grpc.LeaderServiceServicer):
         Returns:
             Ack: Acknowledgment response.
         """
-
         return spec_pb2.Ack(error_code=0, error_message="")
 
     def CheckLeader(self, request, context):
@@ -688,7 +635,6 @@ class LeaderService(spec_pb2_grpc.LeaderServiceServicer):
         Returns:
             Ack: Acknowledgment response.
         """
-
         return spec_pb2.Ack(error_code=0, error_message="")
 
 
@@ -717,8 +663,6 @@ def serve_leader_client(leader_state):
     server.start()
     print("Client server started, listening on " + client_address)
     return server
-
-# internal channel for leader to communicate with follower
 
 
 def serve_leader_follower(leader_state):
@@ -763,7 +707,6 @@ def update_followers(leader_state):
     Args:
         leader_state (dict): Dictionary containing leader server state.
     """
-
     time.sleep(5)
 
     while True:

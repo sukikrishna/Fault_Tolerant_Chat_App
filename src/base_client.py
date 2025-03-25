@@ -31,19 +31,6 @@ class reconnect_on_error:
             return self
         return functools.partial(self.__call__, instance)
 
-    # def __call__(self, instance, *args, **kwargs):
-    #     """Handles retry logic when a gRPC error occurs."""
-
-    #     try:
-    #         return self.method(instance, *args, **kwargs)
-    #     except grpc.RpcError as e:
-    #         if e.code() == grpc.StatusCode.UNAVAILABLE:
-    #             print("Server is unavailable. Trying to reconnect...")
-    #             instance.connect()
-    #             return self.method(instance, *args, **kwargs)
-    #         else:
-    #             print("Error:", e)
-
     def __call__(self, instance, *args, **kwargs):
         """Handles retry logic when a gRPC error occurs.
 
@@ -95,9 +82,6 @@ class ChatClientBase:
         """Placeholder for cleanup or exit logic when a connection fails."""
         pass
 
-    # def relogin(self):
-    #     pass
-
 
     def relogin(self):
         """Attempts to maintain the user session when reconnecting to a new server.
@@ -113,102 +97,15 @@ class ChatClientBase:
             self.user_session_id = ""
             return False
 
-
-    # def connect(self):
-    #     """Tries to connect to the leader server and establish a gRPC stub. Falls back to other addresses if needed."""
-
-    #     # breakpoint()
-    #     with self.lock:
-    #         # Check the connection using a simple request like ListUsers
-    #         try:
-    #             # Update this line to use ListUsersRequest instead of Empty
-    #             response = self.stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
-    #             if response:
-    #                 print("Connection is active")
-    #                 return
-    #         except (Exception, grpc.RpcError) as e:
-    #             pass
-
-    #         if len(self.addresses) == 0:
-    #             print("No server is available.")
-    #             return
-
-    #         tried = set()
-    #         retries = 0
-    #         success = False
-    #         while retries < self.max_retries:
-    #             try:
-    #                 print("Trying to connect to ", self.addresses[0])
-    #                 self.channel = grpc.insecure_channel(self.addresses[0])
-    #                 self.stub = spec_pb2_grpc.ClientAccountStub(self.channel)
-    #                 response = self.stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
-    #                 if response:
-    #                     success = True
-    #                     print("Connected to the server")
-    #                     break
-    #             except grpc.RpcError as e:
-    #                 if (e.code() == grpc.StatusCode.UNIMPLEMENTED):
-    #                     # we are probably talking to a follower so move the address to the end
-    #                     if (self.addresses[0] in tried):
-    #                         # we have visted all the addresses and nodes are not responding
-    #                         # so we can exit
-    #                         self.exit_()
-    #                         return
-
-    #                     tried.add(self.addresses[0])
-    #                     self.addresses.append(self.addresses.pop(0))
-    #                     print("talking to a follower, moving to next address",
-    #                         self.addresses)
-    #                 else:
-    #                     print(
-    #                         f"Connection failed. Retrying in {self.retry_interval} seconds... Error: {e.code()}")
-    #                     retries += 1
-    #                 time.sleep(self.retry_interval)
-
-    #         if not success:
-    #             print("Failed to establish connection after maximum retries.")
-    #             # if reachingout to the server multiple times doesn't get response
-    #             # delete this address as it is usless
-    #             # you want to relogin here, because session data isn't
-    #             # replicated accross databases
-    #             self.addresses.pop(0)
-    #             # print(self.addresses)
-    #             self.relogin()
-    #             return
-    #             # return self.connect()
-    #         else:
-    #             print(f"Connected to {self.addresses[0]}")
-                
-    #             # If we have a session ID, try to verify it's still valid
-    #             if self.user_session_id:
-    #                 try:
-    #                     response = self.stub.GetUnreadCounts(
-    #                         spec_pb2.SessionRequest(session_id=self.user_session_id)
-    #                     )
-    #                     # If we get an error about not being logged in, clear the session ID
-    #                     if response.error_code == StatusCode.USER_NOT_LOGGED_IN:
-    #                         print("Session expired on the new server")
-    #                         self.user_session_id = ""
-    #                     else:
-    #                         print("Session successfully maintained after reconnection")
-    #                 except Exception as e:
-    #                     print(f"Error verifying session: {e}")
-    #                     # If there's any error, we'll just leave the session ID as is
-    #                     # and let subsequent calls determine if it's valid
-    #                     pass
-
-
     def connect(self):
         """Tries to connect to the leader server and establish a gRPC stub.
 
         Tries multiple addresses and retries connections if needed. If a session
         is already active, it attempts to verify its validity on the new server.
         """
-
         with self.lock:
             # Check the connection using a simple request like ListUsers
             try:
-                # Update this line to use ListUsersRequest instead of Empty
                 response = self.stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
                 if response:
                     print("Connection is active")
@@ -297,15 +194,9 @@ class ChatClientBase:
                 spec_pb2.SessionRequest(session_id=self.user_session_id)
             )
             # If we don't get an error code for not logged in, session is valid
-            return response.error_code != StatusCode.USER_NOT_LOGGED_IN
+            return response.error_code != grpc.StatusCode.USER_NOT_LOGGED_IN
         except grpc.RpcError:
             return False
-
-
-    # @reconnect_on_error
-    # def list_users(self):
-    #     response = self.stub.ListUsers(spec_pb2.Empty())
-    #     return response.user
 
     @reconnect_on_error
     def list_users(self, wildcard="*"):
@@ -317,7 +208,6 @@ class ChatClientBase:
         Returns:
             List[User]: A list of user objects.
         """
-
         request = spec_pb2.ListUsersRequest(wildcard=wildcard)
         response = self.stub.ListUsers(request)
         return response.user
@@ -334,7 +224,6 @@ class ChatClientBase:
         Returns:
             ServerResponse: gRPC server response.
         """
-
         response = self.stub.CreateAccount(
             spec_pb2.CreateAccountRequest(username=username, password=password))
         return response
@@ -350,7 +239,6 @@ class ChatClientBase:
         Returns:
             ServerResponse: gRPC server response.
         """
-
         response = self.stub.Login(
             spec_pb2.LoginRequest(username=username, password=password))
         return response
@@ -366,7 +254,6 @@ class ChatClientBase:
         Returns:
             ServerResponse: gRPC server response.
         """
-
         response = self.stub.Send(
             spec_pb2.SendRequest(session_id=self.user_session_id, message=message, to=to))
         return response
@@ -390,7 +277,6 @@ class ChatClientBase:
         Returns:
             ServerResponse: gRPC server response.
         """
-
         response = self.stub.DeleteAccount(
             spec_pb2.DeleteAccountRequest(session_id=self.user_session_id))
         return response
@@ -402,25 +288,9 @@ class ChatClientBase:
         Returns:
             Messages: A message list from the server.
         """
-
         msgs = self.stub.GetMessages(
             spec_pb2.ReceiveRequest(session_id=self.user_session_id))
         return msgs
-
-    @reconnect_on_error
-    def acknowledge_received_messages(self, message_ids):
-        """Acknowledges messages as received so they won't be returned again.
-
-        Args:
-            message_ids (List[int]): List of message IDs.
-
-        Returns:
-            ServerResponse: gRPC server response.
-        """
-
-        ack_response = self.stub.AcknowledgeReceivedMessages(
-            spec_pb2.AcknowledgeRequest(session_id=self.user_session_id, message_ids=message_ids))
-        return ack_response
 
     @reconnect_on_error
     def get_chat(self, recipient):
@@ -432,7 +302,6 @@ class ChatClientBase:
         Returns:
             Messages: A list of all messages between the two users.
         """
-
         msgs = self.stub.GetChat(
             spec_pb2.ChatRequest(session_id=self.user_session_id, username=recipient))
         return msgs
@@ -447,7 +316,6 @@ class ChatClientBase:
         Returns:
             ServerResponse: gRPC server response.
         """
-
         request = spec_pb2.DeleteMessagesRequest(
             session_id=self.user_session_id,
             message_ids=message_ids

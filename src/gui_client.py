@@ -6,7 +6,7 @@ from base_client import ChatClientBase
 import tkinter.messagebox as messagebox
 from ttkthemes import ThemedStyle
 import signal
-
+import argparse
 import spec_pb2
 
 from message_frame import MessageFrame
@@ -19,7 +19,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         Args:
             addresses (List[str]): List of gRPC server addresses.
         """
-
         tk.Tk.__init__(self)
         ChatClientBase.__init__(self, addresses)
 
@@ -30,7 +29,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
         self.create_widgets()
         self.unread_popup_shown = False  # Flag to show unread popup once per login
-
 
         user_list_update_thread = threading.Thread(
             target=self.update_user_list)
@@ -53,7 +51,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def exit_(self, *args, **kwargs):
         """Logs out the user and closes the application window."""
-
         try:
             self.logout()
         except Exception as e:
@@ -62,7 +59,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def search_users(self):
         """Searches for users based on the text in the recipient entry field."""
-
         pattern = self.recipient_var.get().strip()
         if not pattern:
             self.is_search_active = False
@@ -97,7 +93,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         Args:
             event (tk.Event): The selection event from Listbox.
         """
-
         try:
             selection = self.user_listbox.get(self.user_listbox.curselection())
             username = selection.split(' [')[0]
@@ -109,7 +104,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def delete_selected_messages(self):
         """Deletes messages selected via checkboxes in the chat frame."""
-
         message_ids = []
         for widget in self.chat_frame_inner.winfo_children():
             if isinstance(widget, MessageFrame) and widget.select_var.get():
@@ -121,9 +115,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
         try:
             response = self.delete_messages(message_ids)
-            # if response and response.error_code == 0:
-            #     messagebox.showinfo("Deleted", response.error_message)
-            #     self.load_chat_history(self.recipient_var.get())
             if response and response.error_code == 0:
                 messagebox.showinfo("Deleted", response.error_message)
                 self.clear_chat()
@@ -137,7 +128,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def create_widgets(self):
         """Creates and lays out all GUI components."""
-
         style = ThemedStyle(self)
         style.set_theme("adapta")
 
@@ -290,7 +280,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         Args:
             notification_text (str): The text to display.
         """
-
         self.notification_text.configure(state='normal')
         self.notification_text.insert(tk.END, notification_text + "\n")
         self.notification_text.configure(state='disabled')
@@ -298,7 +287,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def signup(self):
         """Handles account signup and auto-login if successful."""
-
         username = self.username_entry.get()
         password = self.password_entry.get()
         response = ChatClientBase.create_account(self, username, password)
@@ -309,7 +297,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def login(self):
         """Handles user login and updates the GUI state."""
-
         username = self.username_entry.get()
         password = self.password_entry.get()
         response = ChatClientBase.login(self, username, password)
@@ -341,20 +328,15 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def relogin(self):
         """Prompts the user to log in again after reconnecting to a backup server."""
-        
         if ChatClientBase.relogin(self):
             # Successfully maintained session
             self.display_notification("Server connection restored. Your session continues.")
             return
-        
         messagebox.showinfo(
             "Server Reconnected", 
             "Connected to a backup server. Please log in again."
         )
     
-        # messagebox.showerror(
-        #     "Error", "Server failed, connected to backup server. Please relogin")
-        
         try:
             self.unread_popup_shown = False
             
@@ -378,7 +360,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def logout(self):
         """Logs the user out and resets GUI to login view."""
-
         response = ChatClientBase.logout(self)
 
         if response.error_code == 0:
@@ -397,7 +378,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def reset_to_login_view(self):
         """Resets the GUI state to the pre-login screen."""
-
         self.logged_in_label.pack_forget()
         self.logout_button.pack_forget()
         self.delete_button.pack_forget()
@@ -413,14 +393,10 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def display_users(self):
         """Displays the list of users in the notification panel."""
-
         response = ChatClientBase.list_users(self)
 
         if response:
             users = [user for user in response]
-
-            # self.recipient_combobox["values"] = tuple(
-            #     [user.username for user in users])
 
             self.notification_text.config(state='normal')
             self.notification_text.insert(tk.END, "List of users:\n")
@@ -431,7 +407,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def send_message(self):
         """Sends the message typed in the input field to the selected user."""
-
         to = self.recipient_var.get()
         message = self.message_entry.get()
 
@@ -462,7 +437,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def retry_connection(self):
         """Attempts to reconnect to a server and restore GUI functionality."""
-
         self.connect()
         if self.stub:
             messagebox.showinfo("Success", "Connection re-established.")
@@ -473,10 +447,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def clear_chat(self):
         """Clears the chat message display area."""
-
-        # self.chat_text.config(state='normal')
-        # self.chat_text.delete(1.0, tk.END)
-        # self.chat_text.config(state='disabled')
         for widget in self.chat_frame_inner.winfo_children():
             widget.destroy()
 
@@ -486,14 +456,12 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         Args:
             event (tk.Event): Triggered from a recipient input widget.
         """
-
         self.clear_chat()
         self.load_chat_history(event.widget.get())
 
 
     def load_chat_history(self, recipient):
         """Loads and displays chat history with the specified recipient."""
-
         if not self.user_session_id or not recipient:
             return
 
@@ -535,8 +503,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             self.chat_canvas.yview_moveto(1.0)
         else:
             self.chat_canvas.yview_moveto(0.0)
-
-
 
     def update_notification(self):
         """Periodically fetches and updates unread message counts."""
@@ -634,7 +600,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         Args:
             interval (int): Sleep interval between updates (default: 0).
         """
-
         while True:
             if self.user_session_id and not self.is_search_active:
                 try:
@@ -665,7 +630,6 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def delete_account(self):
         """Handles secure deletion of a user account after confirming password."""
-
         confirm = messagebox.askyesno(
             "Confirm Deletion", "Are you sure you want to delete your account? This action cannot be undone."
         )
@@ -720,16 +684,12 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
         Args:
             addresses (List[str]): List of server addresses to try.
         """
-
         app = cls(addresses)
         app.mainloop()
 
 
 if __name__ == "__main__":
-    import argparse
-
-    # take in a list of available address with the first one being
-    # the leader
+    # list of available address with the first one being the leader
     parser = argparse.ArgumentParser(
         description="Start a chat client.")
     parser.add_argument('-a', '--addresses', nargs='+',
@@ -737,6 +697,5 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     addresses = args.addresses
-    # print(addresses)
 
     ChatClientGUI.run(addresses)

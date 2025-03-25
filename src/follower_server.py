@@ -32,11 +32,9 @@ class FollowerService(spec_pb2_grpc.FollowerServiceServicer):
             leader_address (str): Address of the current leader.
             state (dict): Shared follower state.
         """
-
         self.db_session = db_session
         self.leader_address = leader_address
         self.state = state
-        # print("Follower service initialized")
 
     def AcceptUpdates(self, request, context):
         """Applies state updates from the leader.
@@ -48,7 +46,6 @@ class FollowerService(spec_pb2_grpc.FollowerServiceServicer):
         Returns:
             ServerResponse: Acknowledgment response.
         """
-
         update_data = request.update_data
         self.process_update_data(update_data)
 
@@ -64,12 +61,10 @@ class FollowerService(spec_pb2_grpc.FollowerServiceServicer):
         Args:
             update_data (bytes): Pickled (table, action, object) tuple.
         """
-        # Add your implementation for processing the update_data
         session = scoped_session(self.db_session)
 
         try:
             data = pickle.loads(update_data)
-            # update the followers list
             table, action, obj = data
 
             # Copy attributes without accessing them through SQLAlchemy's descriptors
@@ -128,10 +123,7 @@ class FollowerService(spec_pb2_grpc.FollowerServiceServicer):
         Returns:
             Ack: Acknowledgment response.
         """
-
-        # print("UPDATING leader", flush=True)
         leader_address, leader_id = request.new_leader_address, request.new_leader_id
-        # print('new leader', leader_address, leader_id, flush=True)
         assign_new_leader(self.state, leader_address, leader_id)
         return spec_pb2.Ack(error_code=0, error_message="")
 
@@ -145,7 +137,6 @@ class FollowerService(spec_pb2_grpc.FollowerServiceServicer):
         Returns:
             Ack: Acknowledgment response.
         """
-
         # print("Updating followers for follower")
         new_follower = pickle.loads(request.update_data)
         # remove the current follower from the list
@@ -160,7 +151,6 @@ def request_update(follower_state):
     Args:
         follower_state (dict): Shared follower state dictionary.
     """
-
     leader_address, server_id, internal_address, db_session = follower_state[
         'leader_address'], follower_state['follower_id'], follower_state['follower_address'], follower_state['db_session']
 
@@ -215,7 +205,6 @@ def assign_new_leader(state, leader_address, leader_id):
         leader_address (str): New leader's address.
         leader_id (str): New leader's ID.
     """
-
     print("Accepting new leader")
     state['leader_address'] = leader_address
     # this is only required for windows that has file lockers
@@ -244,9 +233,6 @@ def assign_new_leader(state, leader_address, leader_id):
 
     print('Assigning new leader complete')
 
-
-# class ClientServiceFollower(spec_pb2_grpc.ClientAccountServicer):
-#     pass
 
 class ClientServiceFollower(spec_pb2_grpc.ClientAccountServicer):
     def __init__(self, leader_address):
@@ -281,7 +267,6 @@ def serve_follower_client(follower_state):
     Returns:
         grpc.Server: The gRPC server object.
     """
-
     db_session, address, leader_address, client_address = follower_state['db_session'], follower_state[
         'follower_address'], follower_state['leader_address'], follower_state['client_address']
 
@@ -303,7 +288,6 @@ def server_follower_leader(follower_state):
     Returns:
         grpc.Server: The gRPC server object.
     """
-
     db_session, leader_address, address, followers = follower_state['db_session'], follower_state[
         'leader_address'], follower_state['follower_address'], follower_state['followers']
 

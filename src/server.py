@@ -15,27 +15,20 @@ from leader_server import *
 
 
 def claim_leadery(leader_state):
-    """Notifies all followers that this server is now the leader.
+    """
+    Informs all the followers that this server has become the new leader
+    wathcout for competing leaders problem
 
     Args:
         leader_state (dict): State dictionary containing follower addresses and leader info.
     """
-
-    """Informs all the followers that this server has become the new leader
-    wathcout for competing leaders problem"""
     leader_id, leader_address = leader_state['leader_id'], leader_state['leader_address']
     for _, follower_address in leader_state['followers']:
-        # print('trying to update follower', follower_address)
         with grpc.insecure_channel(follower_address) as channel:
             stub = spec_pb2_grpc.FollowerServiceStub(channel)
-            # print(follower_address, stub, channel)
             update_leader_request = spec_pb2.NewLeaderRequest(
                 new_leader_address=leader_address, new_leader_id=leader_id)
-            # print(update_leader_request)
-            # response = stub.SIMPLE(spec_pb2.Empty(), timeout=5)
-            # print('after simple')
             response = stub.UpdateLeader(update_leader_request, timeout=5)
-            # print('response', response)
 
 
 def upgrade_follower(old_state):
@@ -44,15 +37,11 @@ def upgrade_follower(old_state):
     Args:
         old_state (dict): Current follower state to be upgraded.
     """
-    # Upgrade the follower to a leader
-    # Start the leader server
-    # Start the follower server
     leader_state = old_state
     leader_state['leader_address'] = old_state['follower_address']
     leader_state['leader_id'] = old_state['follower_id']
     leader_state['update_queue'] = queue.Queue()
 
-    # print('killing the opersor :)')
     leader_state['follower_leader_server'].stop(None)
     leader_state['follower_leader_server'].wait_for_termination()
     leader_state['follower_client_server'].stop(None)
@@ -78,8 +67,6 @@ def upgrade_follower(old_state):
     leader_follower_server.wait_for_termination()
     leader_client_server.wait_for_termination()
 
-    # remove from other's followers list
-
 
 def check_new_leader(min_follower, follower_state):
     """Checks if the new leader is alive and updates follower state accordingly.
@@ -88,7 +75,6 @@ def check_new_leader(min_follower, follower_state):
         min_follower (tuple): (ID, address) of the assumed new leader.
         follower_state (dict): The current follower state dictionary.
     """
-
     with grpc.insecure_channel(min_follower[1]) as channel:
         num_tries = 2
         stub = spec_pb2_grpc.LeaderServiceStub(channel)
@@ -114,8 +100,6 @@ def check_new_leader(min_follower, follower_state):
                 print('Error removing the follower')
                 pass
 
-# represents a single client
-
 
 def follower_heart_beat_checker(follower_state):
     """Periodically checks if the leader is alive and initiates election if not.
@@ -123,7 +107,6 @@ def follower_heart_beat_checker(follower_state):
     Args:
         follower_state (dict): The current follower state dictionary.
     """
-
     while True:
         leader_address = follower_state['leader_address']
         print("Heartbeat check", leader_address)
@@ -142,7 +125,6 @@ def follower_heart_beat_checker(follower_state):
                     success = True
                     break
                 except Exception as e:
-                    # print(e)
                     if i == num_tries - 1:
                         print("Leader is not alive, starting election process.")
                         # Start the election process
@@ -150,7 +132,7 @@ def follower_heart_beat_checker(follower_state):
                 followers = follower_state['followers']
                 min_follower = None if len(followers) == 0 else min(
                     followers, key=lambda x: int(x[0]))
-                # elction policy
+                # election policy
                 # if you are smallest id become the leader
                 # if not wait for a new leader and then try again
                 if min_follower == None or int(server_id) < int(min_follower[0]):
@@ -163,8 +145,7 @@ def follower_heart_beat_checker(follower_state):
                     print('Waiting for a new leader!')
                     time.sleep(10)
                     # check if the new leader is alive
-                    # otherwise assume that leader is dead and remove it from
-                    # your list
+                    # otherwise assume that leader is dead and remove it from your list
                     check_new_leader(min_follower, follower_state)
 
         time.sleep(5)
@@ -181,7 +162,6 @@ def leader_routine(
         client_address (str): gRPC address for client-leader communication.
         leader_address (str, optional): Address of current leader (unused for leaders).
     """
-
     database_url = f'sqlite:///chat_{server_id}.db'
     database_engine = init_db(database_url)
 
@@ -222,7 +202,6 @@ def follower_routine(server_id, internal_address, client_address, leader_address
         client_address (str): gRPC address for client-follower communication.
         leader_address (str): Address of the current leader.
     """
-
     database_url = f'sqlite:///chat_{server_id}.db'
     database_engine = init_db(database_url, drop_tables=True)
 
