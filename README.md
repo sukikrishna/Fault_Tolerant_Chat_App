@@ -138,18 +138,33 @@ PYTHONPATH=src pytest tests/ --cov=src --cov-config=.coveragerc
 
 Here's the latest code coverage summary for the core application:
 
-| Name                    | Stmts | Miss | Cover |
-|-------------------------|-------|------|-------|
-| `src/__init__.py`       | 0     | 0    | 100%  |
-| `src/base_client.py`    | 129   | 25   | 81%   |
-| `src/follower_server.py`| 145   | 12   | 92%   |
-| `src/leader_server.py`  | 310   | 62   | 80%   |
-| `src/message_frame.py`  | 19    | 0    | 100%  |
-| `src/models.py`         | 42    | 1    | 98%   |
-| `src/server.py`         | 120   | 15   | 88%   |
-| `src/terminal_client.py`| 95    | 19   | 80%   |
-| `src/utils.py`          | 34    | 0    | 100%  |
-| **TOTAL**               | 894   | 134  | **85%** |
+| Name                      | Stmts | Miss | Cover |
+|---------------------------|-------|------|-------|
+| `src/__init__.py`         | 0     | 0    | 100%  |
+| `src/base_client.py`      | 129   | 12   | 91%   |
+| `src/follower_server.py`  | 116   | 8    | 93%   |
+| `src/leader_server.py`    | 310   | 47   | 85%   |
+| `src/message_frame.py`    | 19    | 0    | 100%  |
+| `src/models.py`           | 42    | 1    | 98%   |
+| `src/server.py`           | 105   | 9    | 91%   |
+| `src/terminal_client.py`  | 95    | 13   | 86%   |
+| `src/utils.py`            | 34    | 0    | 100%  |
+| **TOTAL**                 | 850   | 90   | 89%   |
 
-All  classes and methods are documented with Google-style docstrings.
+
+All classes and methods are documented with Google-style docstrings for consistency and clarity. The complete developer and API documentation is available via Sphinx and rendered using the Read the Docs theme. 
+
+The HTML documentation can be rebuilt locally as:
+
+```bash
+cd docs
+make html   # or on Windows: .\make.bat html
+````
+
+Open the generated docs using:
+```bash
+open _build/html/index.html       # macOS
+start _build/html/index.html      # Windows
+xdg-open _build/html/index.html   # Linux
+```
 
