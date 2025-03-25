@@ -37,6 +37,12 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 
+def fully_load(obj):
+    """Forces loading of all column attributes in a SQLAlchemy ORM object."""
+    for attr in inspect(obj.__class__).mapper.column_attrs:
+        getattr(obj, attr.key)
+
+
 class ClientService(spec_pb2_grpc.ClientAccountServicer):
 
     def __init__(self, db_session, update_queue):
@@ -85,6 +91,7 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
             added_user = session.query(UserModel).filter_by(
                 username=request.username).first()
 
+            fully_load(added_user)
             update_info = pickle.dumps(('users', 'add', added_user))
             # create_update_info("add", added_user, 'users')
 
@@ -122,6 +129,11 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
                 user.logged_in = True
                 user.session_id = session_id
                 session.commit()
+
+                fully_load(user)
+                update_info = pickle.dumps(('users', 'update', user))
+                self.update_queue.put(update_info)
+
 
                 status_code = StatusCode.SUCCESS
                 status_message = "Login successful!!"
@@ -174,6 +186,7 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
                     id=msg.id).first()
 
                 # print("before updating followers")
+                fully_load(msg2)
                 update_info = pickle.dumps(('messages', "add", msg2))
                 # print(update_info)
                 try:

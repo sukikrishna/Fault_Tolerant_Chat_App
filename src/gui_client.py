@@ -341,9 +341,20 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
 
     def relogin(self):
         """Prompts the user to log in again after reconnecting to a backup server."""
-
-        messagebox.showerror(
-            "Error", "Server failed, connected to backup server. Please relogin")
+        
+        if ChatClientBase.relogin(self):
+            # Successfully maintained session
+            self.display_notification("Server connection restored. Your session continues.")
+            return
+        
+        messagebox.showinfo(
+            "Server Reconnected", 
+            "Connected to a backup server. Please log in again."
+        )
+    
+        # messagebox.showerror(
+        #     "Error", "Server failed, connected to backup server. Please relogin")
+        
         try:
             self.unread_popup_shown = False
             

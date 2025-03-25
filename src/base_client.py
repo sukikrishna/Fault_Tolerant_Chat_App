@@ -17,18 +17,35 @@ class reconnect_on_error:
             return self
         return functools.partial(self.__call__, instance)
 
+    # def __call__(self, instance, *args, **kwargs):
+    #     """Handles retry logic when a gRPC error occurs."""
+
+    #     try:
+    #         return self.method(instance, *args, **kwargs)
+    #     except grpc.RpcError as e:
+    #         if e.code() == grpc.StatusCode.UNAVAILABLE:
+    #             print("Server is unavailable. Trying to reconnect...")
+    #             instance.connect()
+    #             return self.method(instance, *args, **kwargs)
+    #         else:
+    #             print("Error:", e)
+
     def __call__(self, instance, *args, **kwargs):
         """Handles retry logic when a gRPC error occurs."""
 
-        try:
-            return self.method(instance, *args, **kwargs)
-        except grpc.RpcError as e:
-            if e.code() == grpc.StatusCode.UNAVAILABLE:
-                print("Server is unavailable. Trying to reconnect...")
-                instance.connect()
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
                 return self.method(instance, *args, **kwargs)
-            else:
-                print("Error:", e)
+            except grpc.RpcError as e:
+                if e.code() == grpc.StatusCode.UNAVAILABLE:
+                    print(f"Server is unavailable (attempt {attempt+1}/{max_attempts}). Trying to reconnect...")
+                    instance.connect()
+                    if attempt == max_attempts - 1:
+                        raise  # Re-raise on the last attempt
+                else:
+                    print(f"Error: {e}")
+                    raise
 
 
 class ChatClientBase:
@@ -45,13 +62,108 @@ class ChatClientBase:
     def exit_(self):
         pass
 
+    # def relogin(self):
+    #     pass
+
+
     def relogin(self):
-        pass
+        """Attempts to maintain the user session when reconnecting to a new server."""
+        if self.user_session_id and self.reconnect_with_session():
+            print("Successfully reconnected with existing session")
+            return True
+        else:
+            print("Session expired, please log in again")
+            self.user_session_id = ""
+            return False
+
+
+    # def connect(self):
+    #     """Tries to connect to the leader server and establish a gRPC stub. Falls back to other addresses if needed."""
+
+    #     # breakpoint()
+    #     with self.lock:
+    #         # Check the connection using a simple request like ListUsers
+    #         try:
+    #             # Update this line to use ListUsersRequest instead of Empty
+    #             response = self.stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
+    #             if response:
+    #                 print("Connection is active")
+    #                 return
+    #         except (Exception, grpc.RpcError) as e:
+    #             pass
+
+    #         if len(self.addresses) == 0:
+    #             print("No server is available.")
+    #             return
+
+    #         tried = set()
+    #         retries = 0
+    #         success = False
+    #         while retries < self.max_retries:
+    #             try:
+    #                 print("Trying to connect to ", self.addresses[0])
+    #                 self.channel = grpc.insecure_channel(self.addresses[0])
+    #                 self.stub = spec_pb2_grpc.ClientAccountStub(self.channel)
+    #                 response = self.stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
+    #                 if response:
+    #                     success = True
+    #                     print("Connected to the server")
+    #                     break
+    #             except grpc.RpcError as e:
+    #                 if (e.code() == grpc.StatusCode.UNIMPLEMENTED):
+    #                     # we are probably talking to a follower so move the address to the end
+    #                     if (self.addresses[0] in tried):
+    #                         # we have visted all the addresses and nodes are not responding
+    #                         # so we can exit
+    #                         self.exit_()
+    #                         return
+
+    #                     tried.add(self.addresses[0])
+    #                     self.addresses.append(self.addresses.pop(0))
+    #                     print("talking to a follower, moving to next address",
+    #                         self.addresses)
+    #                 else:
+    #                     print(
+    #                         f"Connection failed. Retrying in {self.retry_interval} seconds... Error: {e.code()}")
+    #                     retries += 1
+    #                 time.sleep(self.retry_interval)
+
+    #         if not success:
+    #             print("Failed to establish connection after maximum retries.")
+    #             # if reachingout to the server multiple times doesn't get response
+    #             # delete this address as it is usless
+    #             # you want to relogin here, because session data isn't
+    #             # replicated accross databases
+    #             self.addresses.pop(0)
+    #             # print(self.addresses)
+    #             self.relogin()
+    #             return
+    #             # return self.connect()
+    #         else:
+    #             print(f"Connected to {self.addresses[0]}")
+                
+    #             # If we have a session ID, try to verify it's still valid
+    #             if self.user_session_id:
+    #                 try:
+    #                     response = self.stub.GetUnreadCounts(
+    #                         spec_pb2.SessionRequest(session_id=self.user_session_id)
+    #                     )
+    #                     # If we get an error about not being logged in, clear the session ID
+    #                     if response.error_code == StatusCode.USER_NOT_LOGGED_IN:
+    #                         print("Session expired on the new server")
+    #                         self.user_session_id = ""
+    #                     else:
+    #                         print("Session successfully maintained after reconnection")
+    #                 except Exception as e:
+    #                     print(f"Error verifying session: {e}")
+    #                     # If there's any error, we'll just leave the session ID as is
+    #                     # and let subsequent calls determine if it's valid
+    #                     pass
+
 
     def connect(self):
         """Tries to connect to the leader server and establish a gRPC stub. Falls back to other addresses if needed."""
 
-        # breakpoint()
         with self.lock:
             # Check the connection using a simple request like ListUsers
             try:
@@ -69,49 +181,81 @@ class ChatClientBase:
 
             tried = set()
             retries = 0
-            success = False
-            while retries < self.max_retries:
+            
+            # Try all available addresses
+            while len(tried) < len(self.addresses) and retries < self.max_retries:
+                current_address = self.addresses[0]
+                
                 try:
-                    print("Trying to connect to ", self.addresses[0])
-                    self.channel = grpc.insecure_channel(self.addresses[0])
+                    print(f"Trying to connect to {current_address}")
+                    self.channel = grpc.insecure_channel(current_address)
                     self.stub = spec_pb2_grpc.ClientAccountStub(self.channel)
-                    response = self.stub.ListUsers(spec_pb2.Empty())
+                    response = self.stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
+                    
                     if response:
-                        success = True
-                        print("Connected to the server")
-                        break
+                        print(f"Connected to the server at {current_address}")
+                        # Successfully connected, keep this address as the first one
+                        return
+                        
                 except grpc.RpcError as e:
-                    if (e.code() == grpc.StatusCode.UNIMPLEMENTED):
-                        # we are probably talking to a follower so move the address to the end
-                        if (self.addresses[0] in tried):
-                            # we have visted all the addresses and nodes are not responding
-                            # so we can exit
-                            self.exit_()
-                            return
-
-                        tried.add(self.addresses[0])
-                        self.addresses.append(self.addresses.pop(0))
-                        print("talking to a follower, moving to next address",
-                              self.addresses)
+                    if e.code() == grpc.StatusCode.UNIMPLEMENTED:
+                        # We're talking to a follower, move this address to the end
+                        print(f"Address {current_address} is a follower, moving to next address")
                     else:
-                        print(
-                            f"Connection failed. Retrying in {self.retry_interval} seconds... Error: {e.code()}")
-                        retries += 1
+                        print(f"Connection to {current_address} failed: {e.code()}")
+                        
+                    # Mark this address as tried
+                    tried.add(current_address)
+                    
+                    # Move this address to the end and try the next one
+                    self.addresses.append(self.addresses.pop(0))
                     time.sleep(self.retry_interval)
+                    
+                except Exception as e:
+                    print(f"Unexpected error connecting to {current_address}: {e}")
+                    tried.add(current_address)
+                    self.addresses.append(self.addresses.pop(0))
+                    time.sleep(self.retry_interval)
+                    
+                retries += 1
+                
+                # If we've tried all addresses, reset and try again (up to max_retries)
+                if len(tried) >= len(self.addresses):
+                    if retries < self.max_retries:
+                        print(f"Tried all addresses, retrying (attempt {retries}/{self.max_retries})")
+                        tried = set()  # Reset tried set
+                        time.sleep(self.retry_interval)
+            
+            # If we reach here, we couldn't connect to any server
+            print("Failed to establish connection after trying all available servers.")
+            
+            if self.user_session_id:
+                print("Attempting to relogin with existing session")
+                self.relogin()
 
-        if not success:
-            print("Failed to establish connection after maximum retries.")
-            # if reachingout to the server multiple times doesn't get response
-            # delete this address as it is usless
-            # you want to relogin here, because session data isn't
-            # replicated accross databases
-            self.addresses.pop(0)
-            # print(self.addresses)
-            self.relogin()
-            return
-            # return self.connect()
-        else:
-            print(f"Connected to {self.addresses[0]}")
+
+    def reconnect_with_session(self):
+        """Attempts to reconnect while maintaining the same session."""
+        if not self.user_session_id:
+            return False
+        
+        # Try to connect to any available server
+        self.connect()
+        
+        if not self.stub:
+            return False
+        
+        # Verify if the session is still valid
+        try:
+            # Use a lightweight call to verify the session
+            response = self.stub.GetUnreadCounts(
+                spec_pb2.SessionRequest(session_id=self.user_session_id)
+            )
+            # If we don't get an error code for not logged in, session is valid
+            return response.error_code != StatusCode.USER_NOT_LOGGED_IN
+        except grpc.RpcError:
+            return False
+
 
     # @reconnect_on_error
     # def list_users(self):

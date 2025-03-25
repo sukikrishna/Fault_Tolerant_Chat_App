@@ -11,6 +11,7 @@ import spec_pb2_grpc
 
 from models import UserModel, MessageModel, DeletedMessageModel, init_db, get_session_factory
 from sqlalchemy.orm import scoped_session
+from sqlalchemy import inspect
 
 import pickle
 import queue
@@ -63,44 +64,59 @@ class FollowerService(spec_pb2_grpc.FollowerServiceServicer):
         Args:
             update_data (bytes): Pickled (table, action, object) tuple.
         """
-
         # Add your implementation for processing the update_data
         session = scoped_session(self.db_session)
 
-        data = pickle.loads(update_data)
-        # update the followers list
-        table, action, obj = data
-        # print(action, obj)
-        from sqlalchemy import inspect
+        try:
+            data = pickle.loads(update_data)
+            # update the followers list
+            table, action, obj = data
 
-        def object_as_dict(obj_):
-            return {c.key: getattr(obj_, c.key)
-                    for c in inspect(obj_).mapper.column_attrs}
-        # Convert the original object to a dictionary
-        obj_dict = object_as_dict(obj)
+            # Copy attributes without accessing them through SQLAlchemy's descriptors
+            # This avoids the detached instance error
+            obj_dict = {}
+            for c in inspect(obj.__class__).mapper.column_attrs:
+                # Access the raw dictionary underlying the object to avoid triggering lazy loading
+                if c.key in obj.__dict__:
+                    obj_dict[c.key] = obj.__dict__[c.key]
+                else:
+                    # For any attributes not in __dict__, use a safer approach
+                    try:
+                        obj_dict[c.key] = getattr(obj, c.key)
+                    except Exception:
+                        # If attribute access fails, use a default value or skip
+                        obj_dict[c.key] = None
 
-        # Recreate the object from the data
-        new_obj = table_class_mapping[table]()
-        for key, value in obj_dict.items():
-            # print(key, value)
-            setattr(new_obj, key, value)
+            # Recreate the object from the data
+            new_obj = table_class_mapping[table]()
+            for key, value in obj_dict.items():
+                setattr(new_obj, key, value)
 
-        if action == 'add':
-            session.add(new_obj)
-        elif action == 'delete':
-            # session.delete(new_obj)
-            existing = session.query(table_class_mapping[table]).get(new_obj.id)
-            if existing:
-                session.delete(existing)
+            if action == 'add':
+                session.add(new_obj)
+            elif action == 'delete':
+                existing = session.query(table_class_mapping[table]).get(new_obj.id)
+                if existing:
+                    session.delete(existing)
+            elif action == 'update':
+                # For updates, use merge which handles detached instances better
+                session.merge(new_obj)
 
-        elif action == 'update':
-            session.merge(new_obj)
-        session.commit()
+            session.commit()
 
-        # print database to check if it is updated
-        # query all users
-        Users = session.query(UserModel).all()
-        # print('after update', Users)
+            # If this was a user update with session information, ensure we keep it
+            if action == 'update' and table == 'users':
+                existing = session.query(table_class_mapping[table]).get(new_obj.id)
+                if existing and hasattr(new_obj, 'session_id') and new_obj.session_id:
+                    existing.session_id = new_obj.session_id
+                    existing.logged_in = True
+                    session.commit()
+        
+        except Exception as e:
+            print(f"Error processing update: {e}")
+            session.rollback()
+        finally:
+            session.remove()
 
     def UpdateLeader(self, request, context):
         """Updates the leader address and re-syncs the database.
@@ -164,9 +180,9 @@ def request_update(follower_state):
 
                     from sqlalchemy import inspect
 
-                    def object_as_dict(obj):
-                        return {c.key: getattr(obj, c.key)
-                                for c in inspect(obj).mapper.column_attrs}
+                    def object_as_dict(obj_):
+                        return {c.key: obj_.__dict__.get(c.key) for c in inspect(obj_).mapper.column_attrs}
+
                     new_record = table_class_mapping[table_name](
                         **object_as_dict(record)
                     )
