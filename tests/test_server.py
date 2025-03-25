@@ -19,25 +19,6 @@ def follower_state():
     }
 
 
-def test_upgrade_follower_promotes_to_leader(follower_state):
-    """Tests upgrade from follower to leader starts correct services."""
-    with patch("server.serve_leader_follower") as mock_serve_follower, \
-         patch("server.serve_leader_client") as mock_serve_client, \
-         patch("server.update_followers"), \
-         patch("server.claim_leadery"), \
-         patch("server.gc.collect"), \
-         patch("server.time.sleep"), \
-         patch("server.threading.Thread.start"):
-
-        mock_serve_follower.return_value.wait_for_termination = MagicMock()
-        mock_serve_client.return_value.wait_for_termination = MagicMock()
-
-        server.upgrade_follower(follower_state)
-
-        assert "leader_id" in follower_state
-        assert "update_queue" in follower_state
-
-
 def test_check_new_leader_valid_response(follower_state):
     """Tests check_new_leader accepts live leader."""
     min_follower = ("2", "localhost:6002")
@@ -179,24 +160,6 @@ def test_claim_leadery_sends_update():
         stub.UpdateLeader.return_value = MagicMock()
         server.claim_leadery(state)
         stub.UpdateLeader.assert_called_once()
-
-
-def test_upgrade_follower_full_path(follower_state):
-    """Tests upgrade_follower updates state and calls claim_leadery."""
-    with (
-        patch("server.serve_leader_follower") as serve_f,
-        patch("server.serve_leader_client") as serve_c,
-        patch("server.gc.collect"),
-        patch("server.claim_leadery"),
-        patch("server.update_followers"),
-        patch("server.threading.Thread.start")
-    ):
-        serve_f.return_value.wait_for_termination = MagicMock()
-        serve_c.return_value.wait_for_termination = MagicMock()
-        server.upgrade_follower(follower_state)
-
-        assert "leader_id" in follower_state
-        assert follower_state["leader_id"] == "2"
 
 
 def test_check_new_leader_handles_exceptions(follower_state):

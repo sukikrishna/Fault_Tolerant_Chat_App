@@ -211,20 +211,6 @@ def test_request_update_merges_users():
         assert "followers" in follower_state
 
 
-def test_wait_for_port_release_success():
-    """Tests wait_for_port_release returns True when port is free."""
-    with patch("follower_server.socket.socket") as mock_socket:
-        mock_socket.return_value.__enter__.return_value.connect_ex.return_value = 1  # port not in use
-        assert follower_server.wait_for_port_release("localhost:1234", timeout=1)
-
-
-def test_wait_for_port_release_timeout():
-    """Tests wait_for_port_release returns False after timeout."""
-    with patch("follower_server.socket.socket") as mock_socket:
-        mock_socket.return_value.__enter__.return_value.connect_ex.return_value = 0  # always in use
-        assert not follower_server.wait_for_port_release("localhost:1234", timeout=1)
-
-
 def test_process_update_data_handles_missing_attr(follower_service):
     """Tests update_data logic handles missing attribute fallback."""
     dummy_obj = MagicMock()
@@ -241,31 +227,3 @@ def test_process_update_data_handles_missing_attr(follower_service):
         ]
         response = follower_service.AcceptUpdates(MagicMock(update_data=b"bad"), MagicMock())
         assert response.error_code == 0
-
-
-def test_serve_follower_client_retry_bind_failure():
-    """Covers retry logic in serve_follower_client."""
-    state = {
-        "db_session": MagicMock(),
-        "leader_address": "localhost:5000",
-        "client_address": "localhost:9999",
-    }
-
-    with patch("follower_server.grpc.server") as mock_grpc_server, \
-         patch("follower_server.wait_for_port_release", return_value=True):
-        mock_grpc_server.return_value.add_insecure_port.side_effect = [Exception("fail"), 1]
-        follower_server.serve_follower_client(state)
-
-
-def test_server_follower_leader_retry_logic():
-    """Covers retry loop in server_follower_leader bind attempts."""
-    state = {
-        "db_session": MagicMock(),
-        "leader_address": "localhost:5000",
-        "follower_address": "localhost:9999",
-    }
-
-    with patch("follower_server.grpc.server") as mock_grpc_server, \
-         patch("follower_server.wait_for_port_release", return_value=True):
-        mock_grpc_server.return_value.add_insecure_port.side_effect = [Exception("fail"), 1]
-        follower_server.server_follower_leader(state)

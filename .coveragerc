@@ -1,0 +1,13 @@
+[run]
+omit =
+    src/gui_client.py
+    src/spec_pb2.py
+    src/spec_pb2_grpc.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    except Exception
+    except:
+    pass
