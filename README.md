@@ -161,10 +161,5 @@ cd docs
 make html   # or on Windows: .\make.bat html
 ````
 
-Open the generated docs using:
-```bash
-open _build/html/index.html       # macOS
-start _build/html/index.html      # Windows
-xdg-open _build/html/index.html   # Linux
-```
+The generated docs ca be found at `build/html/index`.
 

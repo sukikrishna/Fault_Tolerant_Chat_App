@@ -146,6 +146,25 @@ We fixed the login session behavior after leader failover. Originally, clients h
 
 #### Mar 25, 2025
 
-We mostly debugged some of the issues and errors we had related to crashing of the server and the comunication between server and client. We also worked on cleaning up the code base, adding missing docstrings and improving the code coverage to ~89%. We now have total 98 tests covering most of the edge cases and functions. Added sphinx documentation:
+We mostly debugged some of the issues and errors we had related to crashing of the server and the comunication between server and client. Additionally, we cleaned up the codebase by completing missing docstrings and increasing test coverage. The test suite now includes 98 tests, covering most critical paths and edge cases. We also integrated Sphinx documentation for maintainability and better code navigation.
 
 ![alt text](img/docs.png)
+
+##### Work Completed
+
+- Server Stability & Communication
+    - Investigated and resolved issues causing server crashes during runtime.
+    - Improved the robustness of client-server interactions under various failure scenarios.
+
+-  Codebase Cleanup
+    - Added docstrings across all modules.
+    - Refactored functions for readability and modularity.
+
+-  Testing Improvements
+    - Increased total tests to **98**.
+    - Improved test coverage from ~85% to **~89%**.
+    - Added coverage for edge cases and fault-tolerant scenarios.
+
+-  Documentation
+    - Set up and configured Sphinx documentation.
+    - Structured module-level docs using `.. automodule::` with proper hierarchy.
