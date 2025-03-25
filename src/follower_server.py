@@ -181,6 +181,14 @@ def request_update(follower_state):
                     from sqlalchemy import inspect
 
                     def object_as_dict(obj_):
+                        """Converts a SQLAlchemy model instance to a dictionary.
+
+                        Args:
+                            obj_ (Base): SQLAlchemy model instance.
+
+                        Returns:
+                            dict: Dictionary of column names and values.
+                        """
                         return {c.key: obj_.__dict__.get(c.key) for c in inspect(obj_).mapper.column_attrs}
 
                     new_record = table_class_mapping[table_name](
@@ -242,9 +250,22 @@ def assign_new_leader(state, leader_address, leader_id):
 
 class ClientServiceFollower(spec_pb2_grpc.ClientAccountServicer):
     def __init__(self, leader_address):
+        """Initializes the follower-side client service stub that forwards to leader.
+
+        Args:
+            leader_address (str): Address of the current leader server.
+        """
         self.leader_address = leader_address
 
     def __getattr__(self, name):
+        """Overrides attribute access to raise unimplemented error for all RPC methods.
+
+        Args:
+            name (str): Method name being accessed.
+
+        Returns:
+            Callable: A dummy method that raises UNIMPLEMENTED error.
+        """
         # Forward all method calls to the leader
         def method(*args, **kwargs):
             raise grpc.RpcError(grpc.StatusCode.UNIMPLEMENTED, "This method is not available on follower.")

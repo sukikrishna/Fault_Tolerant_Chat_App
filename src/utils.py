@@ -2,6 +2,29 @@ import enum
 
 
 class StatusCode():
+    """Defines integer-based error and success codes for chat operations.
+
+    Attributes:
+        SUCCESS (int): Operation completed successfully.
+        INVALID_FUNCTION (int): Function does not exist or is unrecognized.
+        INVALID_ARGUMENTS (int): Invalid or missing arguments provided.
+        INVALID_USERNAME (int): Username format or value is invalid.
+        INVALID_PASSWORD (int): Password format or value is invalid.
+        INVALID_MESSAGE (int): Message format or content is invalid.
+        INVALID_ACCOUNT (int): Account-related operation failed.
+        INVALID_VISION (int): Placeholder or unused error code.
+        USER_NAME_EXISTS (int): Username is already registered.
+        USER_DOESNT_EXIST (int): Referenced user does not exist.
+        INCORRECT_PASSWORD (int): Password is incorrect.
+        NON_EXISTING_USER_CANT_BE_DELETED (int): Attempt to delete non-existent user.
+        INVALID_VERSION (int): Unsupported version error.
+        USER_ALREADY_LOGGED_IN (int): User is already logged in.
+        USER_NOT_LOGGED_IN (int): Operation attempted without login.
+        RECEIVER_DOESNT_EXIST (int): Target message recipient doesn't exist.
+        MULTIPLE_USERS_ON_SAME_SOCKET (int): Multiple users trying to share a socket.
+        NO_MESSAGES (int): No messages available for retrieval.
+        NOT_LEADER (int): Request must be handled by the leader server.
+    """
     SUCCESS = 0
     INVALID_FUNCTION = 1
     INVALID_ARGUMENTS = 2

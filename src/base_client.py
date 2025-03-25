@@ -10,9 +10,23 @@ class reconnect_on_error:
     """Decorator to automatically reconnect and retry gRPC calls if the server is unavailable."""
 
     def __init__(self, method):
+        """Initializes the reconnect_on_error decorator.
+
+        Args:
+            method (Callable): The method to be wrapped with retry logic.
+        """
         self.method = method
 
     def __get__(self, instance, owner):
+        """Supports instance method binding for decorated functions.
+
+        Args:
+            instance (object): The instance that owns the method.
+            owner (type): The class that owns the method.
+
+        Returns:
+            Callable: A bound method that wraps the original call with error handling.
+        """
         if instance is None:
             return self
         return functools.partial(self.__call__, instance)
@@ -31,9 +45,20 @@ class reconnect_on_error:
     #             print("Error:", e)
 
     def __call__(self, instance, *args, **kwargs):
-        """Handles retry logic when a gRPC error occurs."""
+        """Handles retry logic when a gRPC error occurs.
 
-        max_attempts = 3
+        Args:
+            instance (object): The instance to call the method on.
+            *args: Positional arguments for the wrapped method.
+            **kwargs: Keyword arguments for the wrapped method.
+
+        Returns:
+            Any: The result of the wrapped method call.
+
+        Raises:
+            grpc.RpcError: If all retry attempts fail or an unhandled error occurs.
+        """
+        max_attempts = 5
         for attempt in range(max_attempts):
             try:
                 return self.method(instance, *args, **kwargs)
@@ -50,6 +75,13 @@ class reconnect_on_error:
 
 class ChatClientBase:
     def __init__(self, addresses, max_retries=2, retry_interval=1):
+        """Initializes the base client and attempts to connect to a server.
+
+        Args:
+            addresses (List[str]): List of server addresses to try.
+            max_retries (int): Number of retry attempts for server connection.
+            retry_interval (int): Delay between retry attempts in seconds.
+        """
         self.user_session_id = ""
         self.addresses = addresses
         self.max_retries = max_retries
@@ -60,6 +92,7 @@ class ChatClientBase:
         self.connect()
 
     def exit_(self):
+        """Placeholder for cleanup or exit logic when a connection fails."""
         pass
 
     # def relogin(self):
@@ -67,7 +100,11 @@ class ChatClientBase:
 
 
     def relogin(self):
-        """Attempts to maintain the user session when reconnecting to a new server."""
+        """Attempts to maintain the user session when reconnecting to a new server.
+
+        Returns:
+            bool: True if the session was successfully restored, False otherwise.
+        """
         if self.user_session_id and self.reconnect_with_session():
             print("Successfully reconnected with existing session")
             return True
@@ -162,7 +199,11 @@ class ChatClientBase:
 
 
     def connect(self):
-        """Tries to connect to the leader server and establish a gRPC stub. Falls back to other addresses if needed."""
+        """Tries to connect to the leader server and establish a gRPC stub.
+
+        Tries multiple addresses and retries connections if needed. If a session
+        is already active, it attempts to verify its validity on the new server.
+        """
 
         with self.lock:
             # Check the connection using a simple request like ListUsers
@@ -235,7 +276,11 @@ class ChatClientBase:
 
 
     def reconnect_with_session(self):
-        """Attempts to reconnect while maintaining the same session."""
+        """Attempts to reconnect while maintaining the same session.
+
+        Returns:
+            bool: True if the session is still valid after reconnecting, False otherwise.
+        """
         if not self.user_session_id:
             return False
         

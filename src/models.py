@@ -10,6 +10,15 @@ Base = declarative_base()
 
 
 class UserModel(Base):
+    """Represents a user account in the system.
+
+    Attributes:
+        id (int): Primary key.
+        username (str): Unique username.
+        password (str): Hashed user password.
+        logged_in (bool): Whether the user is currently logged in.
+        session_id (str): Session ID if the user is logged in.
+    """
     __tablename__ = 'users'
 
     id = Column(Integer, primary_key=True)
@@ -20,6 +29,7 @@ class UserModel(Base):
 
 
 class MessageModel(Base):
+    """Represents a message exchange in the system between users."""
     __tablename__ = 'messages'
 
     id = Column(Integer, primary_key=True)
@@ -37,6 +47,7 @@ class MessageModel(Base):
 
 
 class DeletedMessageModel(Base):
+    """Represents a message exchange deleted in the system between users."""
     __tablename__ = 'deleted_messages'
 
     id = Column(Integer, primary_key=True)
