@@ -13,11 +13,30 @@ from message_frame import MessageFrame
 
 
 class ChatClientGUI(tk.Tk, ChatClientBase):
+    """
+    A Tkinter-based graphical chat client that communicates with a distributed gRPC server.
+
+    This class extends both the Tkinter main window (`tk.Tk`) and the gRPC base client (`ChatClientBase`).
+    It provides a full GUI interface for user login, account creation, message sending,
+    unread message notifications, message deletion, and session handling across multiple servers.
+
+    Attributes:
+        addresses (List[str]): List of gRPC server addresses for leader-follower failover support.
+        user_session_id (str): Session token assigned by the server upon login.
+        is_search_active (bool): Tracks whether the user search box is actively being used.
+    """
     def __init__(self, addresses):
-        """Initializes the GUI chat client and starts background threads.
+        """
+        Initializes the GUI chat client and sets up the interface and background threads.
+
+        This constructor initializes both the Tkinter GUI and the base gRPC chat client.
+        It establishes a connection to one of the provided server addresses, sets up the
+        main window layout, and starts background threads for periodically updating the
+        user list, chat window, and unread message notifications.
 
         Args:
-            addresses (List[str]): List of gRPC server addresses.
+            addresses (List[str]): List of gRPC server addresses, with the leader expected
+                                   to be the first address in the list.
         """
         tk.Tk.__init__(self)
         ChatClientBase.__init__(self, addresses)
