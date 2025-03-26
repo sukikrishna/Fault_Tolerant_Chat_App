@@ -403,43 +403,51 @@ class ClientService(spec_pb2_grpc.ClientAccountServicer):
             msgs.error_code = StatusCode.USER_NOT_LOGGED_IN
             msgs.error_message = StatusMessages.get_error_message(
                 msgs.error_code)
+            session.remove()
+            return msgs
+
+        receiver = session.query(UserModel).filter_by(
+            username=request.username).first()
+
+        if receiver is None:
+            msgs.error_code = StatusCode.USER_DOESNT_EXIST
+            msgs.error_message = StatusMessages.get_error_message(
+                msgs.error_code)
+            session.remove()
+            return msgs
+
+        messages = session.query(MessageModel).filter(
+            or_(
+                and_(MessageModel.sender_id == user.id,
+                    MessageModel.receiver_id == receiver.id),
+                and_(MessageModel.sender_id == receiver.id,
+                    MessageModel.receiver_id == user.id)
+            )
+        ).order_by(MessageModel.time_stamp).all()
+
+        if len(messages) == 0:
+            msgs.error_code = StatusCode.NO_MESSAGES
+            msgs.error_message = StatusMessages.get_error_message(
+                msgs.error_code)
         else:
-            receiver = session.query(UserModel).filter_by(
-                username=request.username).first()
+            for message in messages:
+                msg = msgs.message.add()
+                msg.from_ = message.sender.username
+                msg.message = message.content
+                msg.message_id = message.id
+                timestamp_proto = Timestamp()
+                timestamp_proto.FromDatetime(message.time_stamp)
+                msg.time_stamp.CopyFrom(timestamp_proto)
 
-            messages = session.query(MessageModel).filter(
-                or_(
-                    and_(MessageModel.sender_id == user.id,
-                         MessageModel.receiver_id == receiver.id),
-                    and_(MessageModel.sender_id == receiver.id,
-                         MessageModel.receiver_id == user.id)
-                )
-            ).order_by(MessageModel.time_stamp).all()
+                # Mark as received if the current user is the recipient
+                if message.receiver_id == user.id:
+                    message.is_received = True
 
-            if len(messages) == 0:
-                msgs.error_code = StatusCode.NO_MESSAGES
-                msgs.error_message = StatusMessages.get_error_message(
-                    msgs.error_code)
-            else:
-                for message in messages:
-                    msg = msgs.message.add()
-                    msg.from_ = message.sender.username
-                    msg.message = message.content
-                    msg.message_id = message.id
-                    # print(message.time_stamp)
-                    timestamp_proto = Timestamp()
-                    # print(timestamp_proto)
-                    timestamp_proto.FromDatetime(message.time_stamp)
-                    msg.time_stamp.CopyFrom(timestamp_proto)
-                    if (message.receiver_id == user.id):
-                        message.is_received = True
-
-                session.commit()
-                msgs.error_code = StatusCode.SUCCESS
-                msgs.error_message = "Messages received successfully!!"
+            session.commit()
+            msgs.error_code = StatusCode.SUCCESS
+            msgs.error_message = "Messages received successfully!!"
 
         session.remove()
-
         return msgs
     
 

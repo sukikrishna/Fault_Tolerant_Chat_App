@@ -28,7 +28,20 @@ def claim_leadery(leader_state):
             stub = spec_pb2_grpc.FollowerServiceStub(channel)
             update_leader_request = spec_pb2.NewLeaderRequest(
                 new_leader_address=leader_address, new_leader_id=leader_id)
-            response = stub.UpdateLeader(update_leader_request, timeout=5)
+
+            success = False
+            for attempt in range(3):
+                try:
+                    stub.UpdateLeader(update_leader_request, timeout=5)
+                    success = True
+                    break
+                except grpc.RpcError as e:
+                    if e.code() == grpc.StatusCode.UNIMPLEMENTED:
+                        time.sleep(1)
+                    else:
+                        break
+            if not success:
+                print(f"Failed to inform {follower_address} about new leader.")
 
 
 def upgrade_follower(old_state):
@@ -62,6 +75,7 @@ def upgrade_follower(old_state):
     # start a new client service
     leader_client_server = serve_leader_client(leader_state)
 
+    time.sleep(1.5)
     claim_leadery(leader_state)
 
     leader_follower_server.wait_for_termination()

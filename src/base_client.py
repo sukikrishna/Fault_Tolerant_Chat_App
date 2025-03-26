@@ -4,6 +4,7 @@ import time
 import spec_pb2_grpc
 import spec_pb2
 import functools
+from utils import StatusCode
 
 
 class reconnect_on_error:
@@ -221,7 +222,8 @@ class ChatClientBase:
                 spec_pb2.SessionRequest(session_id=self.user_session_id)
             )
             # If we don't get an error code for not logged in, session is valid
-            return response.error_code != grpc.StatusCode.USER_NOT_LOGGED_IN
+            # return response.error_code != grpc.StatusCode.USER_NOT_LOGGED_IN
+            return response.error_code != StatusCode.USER_NOT_LOGGED_IN
         except grpc.RpcError:
             return False
 

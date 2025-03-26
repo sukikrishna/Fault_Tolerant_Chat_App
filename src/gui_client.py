@@ -351,10 +351,7 @@ class ChatClientGUI(tk.Tk, ChatClientBase):
             # Successfully maintained session
             self.display_notification("Server connection restored. Your session continues.")
             return
-        messagebox.showinfo(
-            "Server Reconnected", 
-            "Connected to a backup server. Please log in again."
-        )
+        # print("Reconnected to a backup server. Login required.")
     
         try:
             self.unread_popup_shown = False
@@ -711,10 +708,23 @@ if __name__ == "__main__":
     # list of available address with the first one being the leader
     parser = argparse.ArgumentParser(
         description="Start a chat client.")
-    parser.add_argument('-a', '--addresses', nargs='+',
-                        help='<Required> give list of available servers', required=True)
+    # parser.add_argument('-a', '--addresses', nargs='+',
+    #                     help='<Required> give list of available servers', required=True)
+    # args = parser.parse_args()
+    # addresses = args.addresses
+    
+
+
+    parser.add_argument('--host', required=True, help='Hostname of the servers, e.g., localhost')
+    parser.add_argument('--port', type=int, required=True, help='Port of the current leader')
 
     args = parser.parse_args()
-    addresses = args.addresses
+
+    # replica_ports = list(range(5001, 5011, 2))
+    # 2625
+    replica_ports = list(range(args.port, args.port + 15, 2))
+
+    addresses = [f"{args.host}:{port}" for port in replica_ports]
+    # print(addresses)
 
     ChatClientGUI.run(addresses)

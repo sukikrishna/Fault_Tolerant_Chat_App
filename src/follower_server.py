@@ -15,6 +15,7 @@ from sqlalchemy import inspect
 
 import pickle
 import queue
+import time
 
 from utils import StatusCode, StatusMessages
 
@@ -160,7 +161,21 @@ def request_update(follower_state):
         stub = spec_pb2_grpc.LeaderServiceStub(channel)
         register_follower_request = spec_pb2.RegisterFollowerRequest(
             follower_id=server_id, follower_address=internal_address)
-        response = stub.RegisterFollower(register_follower_request)
+        
+        for attempt in range(3):
+            try:
+                response = stub.RegisterFollower(register_follower_request)
+                break
+            except grpc.RpcError as e:
+                if e.code() == grpc.StatusCode.UNIMPLEMENTED:
+                    print("RegisterFollower not ready on leader. Retrying...")
+                    time.sleep(1)
+                else:
+                    raise
+        else:
+            raise RuntimeError("Leader did not implement RegisterFollower after 3 attempts.")
+
+
         leader_db = pickle.loads(response.pickled_db)
 
         # update database with the leader data
