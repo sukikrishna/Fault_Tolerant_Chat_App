@@ -715,25 +715,34 @@ def update_followers(leader_state):
     Args:
         leader_state (dict): Dictionary containing leader server state.
     """
-    time.sleep(5)
+    time.sleep(5)  # Give followers time to come online first
+
+    retry_threshold = 3
+    retry_tracker = {}  # Track how many times a follower failed
 
     while True:
-        follower_addresses = leader_state['followers']
+        follower_addresses = list(leader_state['followers'])  # Create a copy to modify safely
         update_queue = leader_state['update_queue']
 
-        # Fetch the update data here
         update_data = get_update_data(update_queue)
 
         if update_data is not None:
-            # Iterate through each follower and send updates
-            for _, follower_address in follower_addresses:
+            for follower_id, follower_address in follower_addresses:
                 try:
-                    # print(follower_address)
                     with grpc.insecure_channel(follower_address) as channel:
                         stub = spec_pb2_grpc.FollowerServiceStub(channel)
-                        accept_updates_request = spec_pb2.AcceptUpdatesRequest(
-                            update_data=update_data)
-                        response = stub.AcceptUpdates(accept_updates_request)
-                except Exception as e:
-                    print("Error while sending updates to follower: " + str(e))
+                        request = spec_pb2.AcceptUpdatesRequest(update_data=update_data)
+                        stub.AcceptUpdates(request)
+                        retry_tracker[follower_address] = 0  # Reset on success
+                except grpc.RpcError as e:
+                    print(f"[WARN] Failed to send update to follower {follower_address}: {e.code()}")
+
+                    if e.code() == grpc.StatusCode.UNAVAILABLE:
+                        retry_tracker[follower_address] = retry_tracker.get(follower_address, 0) + 1
+                        if retry_tracker[follower_address] >= retry_threshold:
+                            print(f"[INFO] Removing unreachable follower: {follower_address}")
+                            leader_state['followers'].remove((follower_id, follower_address))
+                            retry_tracker.pop(follower_address, None)
+                    else:
+                        print(f"[ERROR] Unexpected gRPC error: {e}")
         time.sleep(2)
