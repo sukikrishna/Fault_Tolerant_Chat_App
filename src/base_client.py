@@ -173,26 +173,69 @@ class ChatClientBase:
     #             self.relogin()
 
 
+    # def connect(self):
+    #     with self.lock:
+    #         for _ in range(len(self.addresses)):
+    #             current_address = self.addresses[0]
+    #             print(f"Trying to connect to {current_address}")
+
+    #             try:
+    #                 channel = grpc.insecure_channel(current_address)
+    #                 stub = spec_pb2_grpc.ClientAccountStub(channel)
+    #                 response = stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
+    #                 # success – valid leader
+    #                 self.channel = channel
+    #                 self.stub = stub
+    #                 print(f"Connected to the server at {current_address}")
+    #                 return
+    #             except grpc.RpcError as e:
+    #                 if e.code() == grpc.StatusCode.FAILED_PRECONDITION:
+    #                     print(f"{current_address} is a follower, skipping.")
+    #                 else:
+    #                     print(f"Connection to {current_address} failed: {e.code()}")
+
+    #             self.addresses.append(self.addresses.pop(0))
+    #             time.sleep(self.retry_interval)
+
+    #         print("Failed to establish connection after trying all available servers.")
+
+
     def connect(self):
+        """Tries to connect to the leader server and establish a gRPC stub.
+
+        Tries multiple addresses and retries connections if needed. If a session
+        is already active, it attempts to verify its validity on the new server.
+        """
+        
+        hidden_ports = {2635, 2637, 2639}  # Define your hidden/test ports
+
         with self.lock:
             for _ in range(len(self.addresses)):
                 current_address = self.addresses[0]
-                print(f"Trying to connect to {current_address}")
+                host, port = current_address.split(":")
+                port = int(port)
+
+                if port not in hidden_ports:
+                    print(f"Trying to connect to {current_address}")
 
                 try:
                     channel = grpc.insecure_channel(current_address)
                     stub = spec_pb2_grpc.ClientAccountStub(channel)
                     response = stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
-                    # success – valid leader
+
                     self.channel = channel
                     self.stub = stub
-                    print(f"Connected to the server at {current_address}")
+
+                    if port not in hidden_ports:
+                        print(f"Connected to the server at {current_address}")
                     return
                 except grpc.RpcError as e:
                     if e.code() == grpc.StatusCode.FAILED_PRECONDITION:
-                        print(f"{current_address} is a follower, skipping.")
+                        if port not in hidden_ports:
+                            print(f"{current_address} is a follower, skipping.")
                     else:
-                        print(f"Connection to {current_address} failed: {e.code()}")
+                        if port not in hidden_ports:
+                            print(f"Connection to {current_address} failed: {e.code()}")
 
                 self.addresses.append(self.addresses.pop(0))
                 time.sleep(self.retry_interval)

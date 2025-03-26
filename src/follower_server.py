@@ -151,67 +151,55 @@ class FollowerService(spec_pb2_grpc.FollowerServiceServicer):
 def request_update(follower_state):
     """Registers this follower with the leader and syncs local DB.
 
-    Args:
-        follower_state (dict): Shared follower state dictionary.
+    Retries indefinitely until it successfully contacts the leader.
     """
-    leader_address, server_id, internal_address, db_session = follower_state[
-        'leader_address'], follower_state['follower_id'], follower_state['follower_address'], follower_state['db_session']
+    import pickle
+    from sqlalchemy import inspect
 
-    with grpc.insecure_channel(leader_address) as channel:
-        stub = spec_pb2_grpc.LeaderServiceStub(channel)
-        register_follower_request = spec_pb2.RegisterFollowerRequest(
-            follower_id=server_id, follower_address=internal_address)
-        
-        for attempt in range(3):
-            try:
-                response = stub.RegisterFollower(register_follower_request)
-                break
-            except grpc.RpcError as e:
-                if e.code() == grpc.StatusCode.UNIMPLEMENTED:
-                    print("RegisterFollower not ready on leader. Retrying...")
-                    time.sleep(1)
-                else:
-                    raise
-        else:
-            raise RuntimeError("Leader did not implement RegisterFollower after 3 attempts.")
+    leader_address = follower_state['leader_address']
+    server_id = follower_state['follower_id']
+    internal_address = follower_state['follower_address']
+    db_session = follower_state['db_session']
 
-
-        leader_db = pickle.loads(response.pickled_db)
-
-        # update database with the leader data
-        session = scoped_session(db_session)
+    while True:
         try:
-            for table_name, records in leader_db.items():
-                for record in records:
-                    # print("record", record, type(record), record.username)
+            with grpc.insecure_channel(leader_address) as channel:
+                stub = spec_pb2_grpc.LeaderServiceStub(channel)
+                request = spec_pb2.RegisterFollowerRequest(
+                    follower_id=server_id,
+                    follower_address=internal_address
+                )
+                response = stub.RegisterFollower(request)
 
-                    from sqlalchemy import inspect
+                leader_db = pickle.loads(response.pickled_db)
 
-                    def object_as_dict(obj_):
-                        """Converts a SQLAlchemy model instance to a dictionary.
+                session = scoped_session(db_session)
+                try:
+                    for table_name, records in leader_db.items():
+                        for record in records:
+                            def object_as_dict(obj_):
+                                return {c.key: obj_.__dict__.get(c.key) for c in inspect(obj_).mapper.column_attrs}
+                            new_record = table_class_mapping[table_name](**object_as_dict(record))
+                            session.add(new_record)
+                    session.commit()
+                except Exception as e:
+                    print("Error occurred while syncing DB:", e)
+                    session.rollback()
+                finally:
+                    session.remove()
 
-                        Args:
-                            obj_ (Base): SQLAlchemy model instance.
+                follower_state['followers'] = list(
+                    set([tuple(f.split('-')) for f in response.other_followers])
+                )
+                print(f"[INFO] Successfully registered with leader at {leader_address}")
+                return  # ✅ success
 
-                        Returns:
-                            dict: Dictionary of column names and values.
-                        """
-                        return {c.key: obj_.__dict__.get(c.key) for c in inspect(obj_).mapper.column_attrs}
-
-                    new_record = table_class_mapping[table_name](
-                        **object_as_dict(record)
-                    )
-                    session.add(new_record)
-
-            # Commit the transaction
-            session.commit()
+        except grpc.RpcError as e:
+            print(f"[WARN] RegisterFollower failed with code {e.code()}. Retrying in 2s...")
+            time.sleep(2)
         except Exception as e:
-            print("Error occurred:", e)
-            session.rollback()
-        finally:
-            session.remove()  # Replace session.close() with session.remove()
-        follower_state['followers'] = list(
-            set([tuple(follower.split('-')) for follower in response.other_followers]))
+            print(f"[ERROR] Unexpected exception in request_update: {e}")
+            time.sleep(2)
 
 
 def assign_new_leader(state, leader_address, leader_id):

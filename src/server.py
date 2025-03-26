@@ -17,31 +17,42 @@ import socket
 def claim_leadery(leader_state):
     """
     Informs all the followers that this server has become the new leader
-    wathcout for competing leaders problem
+    and synchronizes the updated follower list with each of them.
 
     Args:
         leader_state (dict): State dictionary containing follower addresses and leader info.
     """
-    leader_id, leader_address = leader_state['leader_id'], leader_state['leader_address']
-    for _, follower_address in leader_state['followers']:
+    import pickle
+
+    leader_id = leader_state['leader_id']
+    leader_address = leader_state['leader_address']
+    followers = leader_state['followers']
+
+    for _, follower_address in followers:
         with grpc.insecure_channel(follower_address) as channel:
             stub = spec_pb2_grpc.FollowerServiceStub(channel)
-            update_leader_request = spec_pb2.NewLeaderRequest(
-                new_leader_address=leader_address, new_leader_id=leader_id)
 
-            success = False
-            for attempt in range(3):
-                try:
-                    stub.UpdateLeader(update_leader_request, timeout=5)
-                    success = True
-                    break
-                except grpc.RpcError as e:
-                    if e.code() == grpc.StatusCode.UNIMPLEMENTED:
-                        time.sleep(1)
-                    else:
-                        break
-            if not success:
-                print(f"Failed to inform {follower_address} about new leader.")
+            update_leader_request = spec_pb2.NewLeaderRequest(
+                new_leader_address=leader_address,
+                new_leader_id=leader_id
+            )
+
+            try:
+                # Step 1: Inform follower about new leader
+                stub.UpdateLeader(update_leader_request, timeout=5)
+                print(f"[INFO] Informed follower {follower_address} of new leader.")
+
+                # Step 2: After success, send follower list updates
+                for fid, faddr in followers:
+                    if faddr != follower_address:  # No need to send self
+                        try:
+                            update_data = pickle.dumps((fid, faddr))
+                            stub.UpdateFollowers(spec_pb2.UpdateFollowersRequest(update_data=update_data))
+                        except grpc.RpcError as e:
+                            print(f"[WARN] Failed to send follower info to {follower_address}: {e.code()}")
+
+            except grpc.RpcError as e:
+                print(f"[WARN] Failed to inform {follower_address} about new leader: {e.code()}")
 
 
 def upgrade_follower(old_state):
