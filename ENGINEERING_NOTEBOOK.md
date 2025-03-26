@@ -1,7 +1,7 @@
 # Engineering Notebook
 
 We have developed a distributed chat application that supports fault tolerance through replication and ensures data persistence across failures. The full source code is available [here](https://github.com/sukikrishna/Fault_Tolerant_Chat_App/tree/main/src).
-More details on the code structure and how to run the code can be found in the [`README.md`](https://github.com/sukikrishna/Fault_Tolerant_Chat_App/tree/main)
+More details on the code structure and how to run the code can be found in the [`README.md`](https://github.com/sukikrishna/Fault_Tolerant_Chat_App/tree/main). Also, the deployed documentation can be found [here](https://sukikrishna.github.io/Fault_Tolerant_Chat_App/).
 
 
 ## Leader Follower Architecture Summary
@@ -165,3 +165,4 @@ We mostly debugged some of the issues and errors we had related to crashing of t
 -  Documentation
     - Set up and configured Sphinx documentation.
     - Structured module-level docs using `.. automodule::` with proper hierarchy.
+    - We deployed the documentation on GitHub Actions.

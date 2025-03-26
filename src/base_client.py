@@ -207,7 +207,7 @@ class ChatClientBase:
         is already active, it attempts to verify its validity on the new server.
         """
         
-        hidden_ports = {2635, 2637, 2639}  # Define your hidden/test ports
+        hidden_ports = {}  # Define your hidden/test ports
 
         with self.lock:
             for _ in range(len(self.addresses)):

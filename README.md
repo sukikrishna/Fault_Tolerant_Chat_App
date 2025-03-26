@@ -159,6 +159,6 @@ The HTML documentation can be rebuilt locally as:
 ```bash
 cd docs
 make html   # or on Windows: .\make.bat html
-````
+```
 
-The generated docs ca be found at `build/html/index`.
+The generated docs ca be found at the deployed at [GitHub Actions](https://sukikrishna.github.io/Fault_Tolerant_Chat_App/).
