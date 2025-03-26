@@ -291,7 +291,7 @@
 <span class="sd">        is already active, it attempts to verify its validity on the new server.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         
-        <span class="n">hidden_ports</span> <span class="o">=</span> <span class="p">{</span><span class="mi">2635</span><span class="p">,</span> <span class="mi">2637</span><span class="p">,</span> <span class="mi">2639</span><span class="p">}</span>  <span class="c1"># Define your hidden/test ports</span>
+        <span class="n">hidden_ports</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># Define your hidden/test ports</span>
 
         <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addresses</span><span class="p">)):</span>
