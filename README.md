@@ -87,7 +87,7 @@ pip install -r requirements.txt
 python src/server.py [id] leader [client address] [internal address]
 ```
 
-An example:
+An examplevon localhost:
 ```bash
 python src/server.py 1 leader localhost:5001 localhost:5002
 ```
@@ -108,16 +108,13 @@ Replace ports and IDs as necessary. You can use remote IPs across machines too.
 3. Start the GUI Client
 
 ```bash
-python src/gui_client.py -a [client addresses 1] [client addresses 2]
+python src/gui_client.py --host [leader ip address] --port [leader port]
 ```
 
 An example:
 ```bash
-python src/gui_client.py -a localhost:5001 localhost:5002
+python src/gui_client.py --host localhost --port 5001
 ```
-
-The client will try the first address; if the leader is down, it connects to the next available.
-
 
 ## Developer Notes
 

@@ -207,7 +207,7 @@ class ChatClientBase:
         is already active, it attempts to verify its validity on the new server.
         """
         
-        hidden_ports = {}  # Define your hidden/test ports
+        check_ports = {}
 
         with self.lock:
             for _ in range(len(self.addresses)):
@@ -215,7 +215,7 @@ class ChatClientBase:
                 host, port = current_address.split(":")
                 port = int(port)
 
-                if port not in hidden_ports:
+                if port not in check_ports:
                     print(f"Trying to connect to {current_address}")
 
                 try:
@@ -226,15 +226,15 @@ class ChatClientBase:
                     self.channel = channel
                     self.stub = stub
 
-                    if port not in hidden_ports:
+                    if port not in check_ports:
                         print(f"Connected to the server at {current_address}")
                     return
                 except grpc.RpcError as e:
                     if e.code() == grpc.StatusCode.FAILED_PRECONDITION:
-                        if port not in hidden_ports:
+                        if port not in check_ports:
                             print(f"{current_address} is a follower, skipping.")
                     else:
-                        if port not in hidden_ports:
+                        if port not in check_ports:
                             print(f"Connection to {current_address} failed: {e.code()}")
 
                 self.addresses.append(self.addresses.pop(0))

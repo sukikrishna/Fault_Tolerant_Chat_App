@@ -708,9 +708,10 @@ if __name__ == "__main__":
     # list of available address with the first one being the leader
     parser = argparse.ArgumentParser(
         description="Start a chat client.")
-    parser.add_argument('-a', '--addresses', nargs='+',
-                        help='<Required> give list of available servers', required=True)
+    parser.add_argument('--host', required=True, help='Hostname of the servers, e.g., localhost')
+    parser.add_argument('--port', type=int, required=True, help='Port of the current leader')
+
     args = parser.parse_args()
-    addresses = args.addresses
+    addresses = f"{args.host}:{args.port}"
 
     ChatClientGUI.run(addresses)
