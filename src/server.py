@@ -12,7 +12,7 @@ import time
 import queue
 from follower_server import *
 from leader_server import *
-
+import socket
 
 def claim_leadery(leader_state):
     """
@@ -73,10 +73,33 @@ def upgrade_follower(old_state):
     update_thread.start()
 
     # start a new client service
+    # leader_client_server = serve_leader_client(leader_state)
+
+    # time.sleep(1.5)
+    # claim_leadery(leader_state)
+
     leader_client_server = serve_leader_client(leader_state)
 
-    time.sleep(1.5)
-    claim_leadery(leader_state)
+    # Actively wait until gRPC port is ready to accept connections
+
+    def wait_for_port(address, timeout=10):
+        host, port = address.split(':')
+        port = int(port)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                with socket.create_connection((host, port), timeout=1):
+                    return True
+            except:
+                time.sleep(0.5)
+        return False
+
+    # Wait until the internal leader RPC service is available before notifying followers
+    if wait_for_port(leader_state["client_address"]):
+        claim_leadery(leader_state)
+    else:
+        print("ERROR: Leader client service not ready. Skipping claim_leadery.")
+
 
     leader_follower_server.wait_for_termination()
     leader_client_server.wait_for_termination()
