@@ -97,79 +97,106 @@ class ChatClientBase:
             self.user_session_id = ""
             return False
 
-    def connect(self):
-        """Tries to connect to the leader server and establish a gRPC stub.
+    # def connect(self):
+    #     """Tries to connect to the leader server and establish a gRPC stub.
 
-        Tries multiple addresses and retries connections if needed. If a session
-        is already active, it attempts to verify its validity on the new server.
-        """
-        with self.lock:
-            # Check the connection using a simple request like ListUsers
-            try:
-                response = self.stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
-                if response:
-                    print("Connection is active")
-                    return
-            except (Exception, grpc.RpcError) as e:
-                pass
+    #     Tries multiple addresses and retries connections if needed. If a session
+    #     is already active, it attempts to verify its validity on the new server.
+    #     """
+    #     with self.lock:
+    #         # Check the connection using a simple request like ListUsers
+    #         try:
+    #             response = self.stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
+    #             if response:
+    #                 print("Connection is active")
+    #                 return
+    #         except (Exception, grpc.RpcError) as e:
+    #             pass
 
-            if len(self.addresses) == 0:
-                print("No server is available.")
-                return
+    #         if len(self.addresses) == 0:
+    #             print("No server is available.")
+    #             return
 
-            tried = set()
-            retries = 0
+    #         tried = set()
+    #         retries = 0
             
-            # Try all available addresses
-            while len(tried) < len(self.addresses) and retries < self.max_retries:
-                current_address = self.addresses[0]
+    #         # Try all available addresses
+    #         while len(tried) < len(self.addresses) and retries < self.max_retries:
+    #             current_address = self.addresses[0]
                 
-                try:
-                    print(f"Trying to connect to {current_address}")
-                    self.channel = grpc.insecure_channel(current_address)
-                    self.stub = spec_pb2_grpc.ClientAccountStub(self.channel)
-                    response = self.stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
+    #             try:
+    #                 print(f"Trying to connect to {current_address}")
+    #                 self.channel = grpc.insecure_channel(current_address)
+    #                 self.stub = spec_pb2_grpc.ClientAccountStub(self.channel)
+    #                 response = self.stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
                     
-                    if response:
-                        print(f"Connected to the server at {current_address}")
-                        # Successfully connected, keep this address as the first one
-                        return
+    #                 if response:
+    #                     print(f"Connected to the server at {current_address}")
+    #                     # Successfully connected, keep this address as the first one
+    #                     return
                         
+    #             except grpc.RpcError as e:
+    #                 if e.code() == grpc.StatusCode.UNIMPLEMENTED:
+    #                     # We're talking to a follower, move this address to the end
+    #                     print(f"Address {current_address} is a follower, moving to next address")
+    #                 else:
+    #                     print(f"Connection to {current_address} failed: {e.code()}")
+                        
+    #                 # Mark this address as tried
+    #                 tried.add(current_address)
+                    
+    #                 # Move this address to the end and try the next one
+    #                 self.addresses.append(self.addresses.pop(0))
+    #                 time.sleep(self.retry_interval)
+                    
+    #             except Exception as e:
+    #                 print(f"Unexpected error connecting to {current_address}: {e}")
+    #                 tried.add(current_address)
+    #                 self.addresses.append(self.addresses.pop(0))
+    #                 time.sleep(self.retry_interval)
+                    
+    #             retries += 1
+                
+    #             # If we've tried all addresses, reset and try again (up to max_retries)
+    #             if len(tried) >= len(self.addresses):
+    #                 if retries < self.max_retries:
+    #                     print(f"Tried all addresses, retrying (attempt {retries}/{self.max_retries})")
+    #                     tried = set()  # Reset tried set
+    #                     time.sleep(self.retry_interval)
+            
+    #         # If we reach here, we couldn't connect to any server
+    #         print("Failed to establish connection after trying all available servers.")
+            
+    #         if self.user_session_id:
+    #             print("Attempting to relogin with existing session")
+    #             self.relogin()
+
+
+    def connect(self):
+        with self.lock:
+            for _ in range(len(self.addresses)):
+                current_address = self.addresses[0]
+                print(f"Trying to connect to {current_address}")
+
+                try:
+                    channel = grpc.insecure_channel(current_address)
+                    stub = spec_pb2_grpc.ClientAccountStub(channel)
+                    response = stub.ListUsers(spec_pb2.ListUsersRequest(wildcard="*"))
+                    # success – valid leader
+                    self.channel = channel
+                    self.stub = stub
+                    print(f"Connected to the server at {current_address}")
+                    return
                 except grpc.RpcError as e:
-                    if e.code() == grpc.StatusCode.UNIMPLEMENTED:
-                        # We're talking to a follower, move this address to the end
-                        print(f"Address {current_address} is a follower, moving to next address")
+                    if e.code() == grpc.StatusCode.FAILED_PRECONDITION:
+                        print(f"{current_address} is a follower, skipping.")
                     else:
                         print(f"Connection to {current_address} failed: {e.code()}")
-                        
-                    # Mark this address as tried
-                    tried.add(current_address)
-                    
-                    # Move this address to the end and try the next one
-                    self.addresses.append(self.addresses.pop(0))
-                    time.sleep(self.retry_interval)
-                    
-                except Exception as e:
-                    print(f"Unexpected error connecting to {current_address}: {e}")
-                    tried.add(current_address)
-                    self.addresses.append(self.addresses.pop(0))
-                    time.sleep(self.retry_interval)
-                    
-                retries += 1
-                
-                # If we've tried all addresses, reset and try again (up to max_retries)
-                if len(tried) >= len(self.addresses):
-                    if retries < self.max_retries:
-                        print(f"Tried all addresses, retrying (attempt {retries}/{self.max_retries})")
-                        tried = set()  # Reset tried set
-                        time.sleep(self.retry_interval)
-            
-            # If we reach here, we couldn't connect to any server
+
+                self.addresses.append(self.addresses.pop(0))
+                time.sleep(self.retry_interval)
+
             print("Failed to establish connection after trying all available servers.")
-            
-            if self.user_session_id:
-                print("Attempting to relogin with existing session")
-                self.relogin()
 
 
     def reconnect_with_session(self):

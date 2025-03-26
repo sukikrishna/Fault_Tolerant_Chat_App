@@ -16,6 +16,8 @@ from sqlalchemy import inspect
 import pickle
 import queue
 
+from utils import StatusCode, StatusMessages
+
 table_class_mapping = {
     'users': UserModel,
     'messages': MessageModel,
@@ -256,6 +258,12 @@ class ClientServiceFollower(spec_pb2_grpc.ClientAccountServicer):
         def method(*args, **kwargs):
             raise grpc.RpcError(grpc.StatusCode.UNIMPLEMENTED, "This method is not available on follower.")
         return method
+    
+    def ListUsers(self, request, context):
+        context.set_code(grpc.StatusCode.FAILED_PRECONDITION)
+        context.set_details("NOT LEADER: CONNECT TO LEADER SERVER")
+        return spec_pb2.Users()
+
 
 
 def serve_follower_client(follower_state):
