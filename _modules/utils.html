@@ -1,0 +1,200 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>utils &mdash; Distributed Chat App with Replication and Persistance 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            Distributed Chat App with Replication and Persistance
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../modules.html">Chat Application Modules</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Distributed Chat App with Replication and Persistance</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Module code</a></li>
+      <li class="breadcrumb-item active">utils</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for utils</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">enum</span>
+
+
+<div class="viewcode-block" id="StatusCode">
+<a class="viewcode-back" href="../modules.html#utils.StatusCode">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">StatusCode</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Defines integer-based error and success codes for chat operations.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        SUCCESS (int): Operation completed successfully.</span>
+<span class="sd">        INVALID_FUNCTION (int): Function does not exist or is unrecognized.</span>
+<span class="sd">        INVALID_ARGUMENTS (int): Invalid or missing arguments provided.</span>
+<span class="sd">        INVALID_USERNAME (int): Username format or value is invalid.</span>
+<span class="sd">        INVALID_PASSWORD (int): Password format or value is invalid.</span>
+<span class="sd">        INVALID_MESSAGE (int): Message format or content is invalid.</span>
+<span class="sd">        INVALID_ACCOUNT (int): Account-related operation failed.</span>
+<span class="sd">        INVALID_VISION (int): Placeholder or unused error code.</span>
+<span class="sd">        USER_NAME_EXISTS (int): Username is already registered.</span>
+<span class="sd">        USER_DOESNT_EXIST (int): Referenced user does not exist.</span>
+<span class="sd">        INCORRECT_PASSWORD (int): Password is incorrect.</span>
+<span class="sd">        NON_EXISTING_USER_CANT_BE_DELETED (int): Attempt to delete non-existent user.</span>
+<span class="sd">        INVALID_VERSION (int): Unsupported version error.</span>
+<span class="sd">        USER_ALREADY_LOGGED_IN (int): User is already logged in.</span>
+<span class="sd">        USER_NOT_LOGGED_IN (int): Operation attempted without login.</span>
+<span class="sd">        RECEIVER_DOESNT_EXIST (int): Target message recipient doesn&#39;t exist.</span>
+<span class="sd">        MULTIPLE_USERS_ON_SAME_SOCKET (int): Multiple users trying to share a socket.</span>
+<span class="sd">        NO_MESSAGES (int): No messages available for retrieval.</span>
+<span class="sd">        NOT_LEADER (int): Request must be handled by the leader server.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">SUCCESS</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">INVALID_FUNCTION</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">INVALID_ARGUMENTS</span> <span class="o">=</span> <span class="mi">2</span>
+    <span class="n">INVALID_USERNAME</span> <span class="o">=</span> <span class="mi">3</span>
+    <span class="n">INVALID_PASSWORD</span> <span class="o">=</span> <span class="mi">4</span>
+    <span class="n">INVALID_MESSAGE</span> <span class="o">=</span> <span class="mi">5</span>
+    <span class="n">INVALID_ACCOUNT</span> <span class="o">=</span> <span class="mi">6</span>
+    <span class="n">INVALID_VISION</span> <span class="o">=</span> <span class="mi">7</span>
+    <span class="n">USER_NAME_EXISTS</span> <span class="o">=</span> <span class="mi">8</span>
+    <span class="n">USER_DOESNT_EXIST</span> <span class="o">=</span> <span class="mi">9</span>
+    <span class="n">INCORRECT_PASSWORD</span> <span class="o">=</span> <span class="mi">10</span>
+    <span class="n">NON_EXISTING_USER_CANT_BE_DELETED</span> <span class="o">=</span> <span class="mi">11</span>
+    <span class="n">INVALID_VERSION</span> <span class="o">=</span> <span class="mi">12</span>
+    <span class="n">USER_ALREADY_LOGGED_IN</span> <span class="o">=</span> <span class="mi">13</span>
+    <span class="n">USER_NOT_LOGGED_IN</span> <span class="o">=</span> <span class="mi">14</span>
+    <span class="n">RECEIVER_DOESNT_EXIST</span> <span class="o">=</span> <span class="mi">15</span>
+    <span class="n">MULTIPLE_USERS_ON_SAME_SOCKET</span> <span class="o">=</span> <span class="mi">16</span>
+    <span class="n">NO_MESSAGES</span> <span class="o">=</span> <span class="mi">17</span>
+    <span class="n">NOT_LEADER</span> <span class="o">=</span> <span class="mi">18</span></div>
+
+
+
+<div class="viewcode-block" id="StatusMessages">
+<a class="viewcode-back" href="../modules.html#utils.StatusMessages">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">StatusMessages</span><span class="p">:</span>
+    <span class="n">error_dict</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">SUCCESS</span><span class="p">:</span> <span class="s2">&quot;Success&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">INVALID_FUNCTION</span><span class="p">:</span> <span class="s2">&quot;Invalid function&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">INVALID_ARGUMENTS</span><span class="p">:</span> <span class="s2">&quot;Invalid arguments&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">INVALID_USERNAME</span><span class="p">:</span> <span class="s2">&quot;Invalid username&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">INVALID_PASSWORD</span><span class="p">:</span> <span class="s2">&quot;Invalid password&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">INVALID_MESSAGE</span><span class="p">:</span> <span class="s2">&quot;Invalid message&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">INVALID_ACCOUNT</span><span class="p">:</span> <span class="s2">&quot;Invalid account&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">INVALID_VISION</span><span class="p">:</span> <span class="s2">&quot;Invalid vision&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_NAME_EXISTS</span><span class="p">:</span> <span class="s2">&quot;USER NAME ALREADY EXISTS&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_DOESNT_EXIST</span><span class="p">:</span> <span class="s2">&quot;USER DOESN&#39;T EXIST&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">INCORRECT_PASSWORD</span><span class="p">:</span> <span class="s2">&quot;INCORRECT PASSWORD&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">NON_EXISTING_USER_CANT_BE_DELETED</span><span class="p">:</span> <span class="s2">&quot;NON EXISTING USER CANT BE DELETED&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">INVALID_VERSION</span><span class="p">:</span> <span class="s2">&quot;UNSUPORTED VERSION&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_ALREADY_LOGGED_IN</span><span class="p">:</span> <span class="s2">&quot;USER ALREADY LOGGED IN&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_NOT_LOGGED_IN</span><span class="p">:</span> <span class="s2">&quot;USER NOT LOGGED IN: LOGIN OR SIGN UP TO USE THE CHAT&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">RECEIVER_DOESNT_EXIST</span><span class="p">:</span> <span class="s2">&quot;RECEIVER DOESN&#39;T EXIST&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">MULTIPLE_USERS_ON_SAME_SOCKET</span><span class="p">:</span> <span class="s2">&quot;ONLY ONE USER PER SOCKET ALLOWED&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">NO_MESSAGES</span><span class="p">:</span> <span class="s2">&quot;NO MESSAGES&quot;</span><span class="p">,</span>
+        <span class="n">StatusCode</span><span class="o">.</span><span class="n">NOT_LEADER</span><span class="p">:</span> <span class="s2">&quot;NOT LEADER: CONNECT TO LEADER SERVER&quot;</span>
+    <span class="p">}</span>
+
+<div class="viewcode-block" id="StatusMessages.get_error_message">
+<a class="viewcode-back" href="../modules.html#utils.StatusMessages.get_error_message">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_error_message</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">error_code</span><span class="p">:</span> <span class="n">StatusCode</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">error_dict</span><span class="p">[</span><span class="n">error_code</span><span class="p">]</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="HelpMessages">
+<a class="viewcode-back" href="../modules.html#utils.HelpMessages">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">HelpMessages</span><span class="p">:</span>
+    <span class="n">HELP_MSG</span> <span class="o">=</span> <span class="s2">&quot;Jarvis Is a socket based chat room. </span><span class="se">\n</span><span class="s2"> You can create an account, login, send messages, receive messages, and delete your account. </span><span class="se">\n</span><span class="s2"> To get more information on a specific command, type &#39;help &lt;command&gt;&#39;. </span><span class="se">\n</span><span class="s2"> Commands: </span><span class="se">\n</span><span class="s2"> create </span><span class="se">\n</span><span class="s2"> list </span><span class="se">\n</span><span class="s2"> login </span><span class="se">\n</span><span class="s2"> send </span><span class="se">\n</span><span class="s2"> receive </span><span class="se">\n</span><span class="s2"> delete </span><span class="se">\n</span><span class="s2"> help </span><span class="se">\n</span><span class="s2"> exit </span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">HELP_CREATE</span> <span class="o">=</span> <span class="s2">&quot;create &lt;username&gt; &lt;password&gt; </span><span class="se">\n</span><span class="s2"> </span><span class="se">\t</span><span class="s2"> Creates a new account with the given username and password. </span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">HELP_LIST</span> <span class="o">=</span> <span class="s2">&quot;list </span><span class="se">\n</span><span class="s2"> </span><span class="se">\t</span><span class="s2"> Lists all users currently logged in. </span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">HELP_LOGIN</span> <span class="o">=</span> <span class="s2">&quot;login &lt;username&gt; &lt;password&gt; </span><span class="se">\n</span><span class="s2"> </span><span class="se">\t</span><span class="s2"> Logs in to an existing account with the given username and password. </span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">HELP_SEND</span> <span class="o">=</span> <span class="s2">&quot;send &lt;username&gt; &lt;message&gt; </span><span class="se">\n</span><span class="s2"> </span><span class="se">\t</span><span class="s2"> Sends a message to the given user. </span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">HELP_RECEIVE</span> <span class="o">=</span> <span class="s2">&quot;receive </span><span class="se">\n</span><span class="s2"> </span><span class="se">\t</span><span class="s2"> Receives all messages sent to you. </span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">HELP_DELETE</span> <span class="o">=</span> <span class="s2">&quot;delete </span><span class="se">\n</span><span class="s2"> </span><span class="se">\t</span><span class="s2"> Deletes your account. </span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">HELP_EXIT</span> <span class="o">=</span> <span class="s2">&quot;exit </span><span class="se">\n</span><span class="s2"> </span><span class="se">\t</span><span class="s2"> Exits the program. </span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">HELP_HELP</span> <span class="o">=</span> <span class="s2">&quot;help </span><span class="se">\n</span><span class="s2"> </span><span class="se">\t</span><span class="s2"> Displays this help message. </span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">HELP_LOGOUT</span> <span class="o">=</span> <span class="s2">&quot;logout </span><span class="se">\n</span><span class="s2"> </span><span class="se">\t</span><span class="s2"> Logs out of your account. </span><span class="se">\n</span><span class="s2">&quot;</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Manasvi Goyal and Sukanya Krishna.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

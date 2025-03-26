@@ -1,0 +1,450 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>server &mdash; Distributed Chat App with Replication and Persistance 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            Distributed Chat App with Replication and Persistance
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../modules.html">Chat Application Modules</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Distributed Chat App with Replication and Persistance</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Module code</a></li>
+      <li class="breadcrumb-item active">server</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for server</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">queue</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">grpc</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">spec_pb2</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">spec_pb2_grpc</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">models</span><span class="w"> </span><span class="kn">import</span> <span class="n">init_db</span><span class="p">,</span> <span class="n">get_session_factory</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">queue</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">follower_server</span><span class="w"> </span><span class="kn">import</span> <span class="o">*</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">leader_server</span><span class="w"> </span><span class="kn">import</span> <span class="o">*</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">socket</span>
+
+<div class="viewcode-block" id="claim_leadery">
+<a class="viewcode-back" href="../modules.html#server.claim_leadery">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">claim_leadery</span><span class="p">(</span><span class="n">leader_state</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Informs all the followers that this server has become the new leader</span>
+<span class="sd">    and synchronizes the updated follower list with each of them.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        leader_state (dict): State dictionary containing follower addresses and leader info.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">pickle</span>
+
+    <span class="n">leader_id</span> <span class="o">=</span> <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;leader_id&#39;</span><span class="p">]</span>
+    <span class="n">leader_address</span> <span class="o">=</span> <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;leader_address&#39;</span><span class="p">]</span>
+    <span class="n">followers</span> <span class="o">=</span> <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;followers&#39;</span><span class="p">]</span>
+
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">follower_address</span> <span class="ow">in</span> <span class="n">followers</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">grpc</span><span class="o">.</span><span class="n">insecure_channel</span><span class="p">(</span><span class="n">follower_address</span><span class="p">)</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+            <span class="n">stub</span> <span class="o">=</span> <span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">FollowerServiceStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+
+            <span class="n">update_leader_request</span> <span class="o">=</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">NewLeaderRequest</span><span class="p">(</span>
+                <span class="n">new_leader_address</span><span class="o">=</span><span class="n">leader_address</span><span class="p">,</span>
+                <span class="n">new_leader_id</span><span class="o">=</span><span class="n">leader_id</span>
+            <span class="p">)</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="c1"># Step 1: Inform follower about new leader</span>
+                <span class="n">stub</span><span class="o">.</span><span class="n">UpdateLeader</span><span class="p">(</span><span class="n">update_leader_request</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[INFO] Informed follower </span><span class="si">{</span><span class="n">follower_address</span><span class="si">}</span><span class="s2"> of new leader.&quot;</span><span class="p">)</span>
+
+                <span class="c1"># Step 2: After success, send follower list updates</span>
+                <span class="k">for</span> <span class="n">fid</span><span class="p">,</span> <span class="n">faddr</span> <span class="ow">in</span> <span class="n">followers</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">faddr</span> <span class="o">!=</span> <span class="n">follower_address</span><span class="p">:</span>  <span class="c1"># No need to send self</span>
+                        <span class="k">try</span><span class="p">:</span>
+                            <span class="n">update_data</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">((</span><span class="n">fid</span><span class="p">,</span> <span class="n">faddr</span><span class="p">))</span>
+                            <span class="n">stub</span><span class="o">.</span><span class="n">UpdateFollowers</span><span class="p">(</span><span class="n">spec_pb2</span><span class="o">.</span><span class="n">UpdateFollowersRequest</span><span class="p">(</span><span class="n">update_data</span><span class="o">=</span><span class="n">update_data</span><span class="p">))</span>
+                        <span class="k">except</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[WARN] Failed to send follower info to </span><span class="si">{</span><span class="n">follower_address</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">code</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+            <span class="k">except</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[WARN] Failed to inform </span><span class="si">{</span><span class="n">follower_address</span><span class="si">}</span><span class="s2"> about new leader: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">code</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="upgrade_follower">
+<a class="viewcode-back" href="../modules.html#server.upgrade_follower">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">upgrade_follower</span><span class="p">(</span><span class="n">old_state</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Promotes a follower to a leader by initializing leader services.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        old_state (dict): Current follower state to be upgraded.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">leader_state</span> <span class="o">=</span> <span class="n">old_state</span>
+    <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;leader_address&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">old_state</span><span class="p">[</span><span class="s1">&#39;follower_address&#39;</span><span class="p">]</span>
+    <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;leader_id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">old_state</span><span class="p">[</span><span class="s1">&#39;follower_id&#39;</span><span class="p">]</span>
+    <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;update_queue&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+
+    <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;follower_leader_server&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">stop</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;follower_leader_server&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">wait_for_termination</span><span class="p">()</span>
+    <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;follower_client_server&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">stop</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;follower_client_server&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">wait_for_termination</span><span class="p">()</span>
+
+    <span class="k">del</span> <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;follower_leader_server&#39;</span><span class="p">]</span>
+    <span class="k">del</span> <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;follower_id&#39;</span><span class="p">]</span>
+    <span class="k">del</span> <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;follower_address&#39;</span><span class="p">]</span>
+
+    <span class="c1"># start a new leader service</span>
+    <span class="n">leader_follower_server</span> <span class="o">=</span> <span class="n">serve_leader_follower</span><span class="p">(</span><span class="n">leader_state</span><span class="p">)</span>
+
+    <span class="c1"># create updater thread</span>
+    <span class="n">update_thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span>
+        <span class="n">target</span><span class="o">=</span><span class="n">update_followers</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">leader_state</span><span class="p">,))</span>
+    <span class="n">update_thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+    <span class="c1"># start a new client service</span>
+    <span class="c1"># leader_client_server = serve_leader_client(leader_state)</span>
+
+    <span class="c1"># time.sleep(1.5)</span>
+    <span class="c1"># claim_leadery(leader_state)</span>
+
+    <span class="n">leader_client_server</span> <span class="o">=</span> <span class="n">serve_leader_client</span><span class="p">(</span><span class="n">leader_state</span><span class="p">)</span>
+
+    <span class="c1"># Actively wait until gRPC port is ready to accept connections</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">wait_for_port</span><span class="p">(</span><span class="n">address</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">10</span><span class="p">):</span>
+        <span class="n">host</span><span class="p">,</span> <span class="n">port</span> <span class="o">=</span> <span class="n">address</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)</span>
+        <span class="n">port</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">port</span><span class="p">)</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="k">while</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span> <span class="o">&lt;</span> <span class="n">timeout</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">with</span> <span class="n">socket</span><span class="o">.</span><span class="n">create_connection</span><span class="p">((</span><span class="n">host</span><span class="p">,</span> <span class="n">port</span><span class="p">),</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="kc">True</span>
+            <span class="k">except</span><span class="p">:</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="c1"># Wait until the internal leader RPC service is available before notifying followers</span>
+    <span class="k">if</span> <span class="n">wait_for_port</span><span class="p">(</span><span class="n">leader_state</span><span class="p">[</span><span class="s2">&quot;client_address&quot;</span><span class="p">]):</span>
+        <span class="n">claim_leadery</span><span class="p">(</span><span class="n">leader_state</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;ERROR: Leader client service not ready. Skipping claim_leadery.&quot;</span><span class="p">)</span>
+
+
+    <span class="n">leader_follower_server</span><span class="o">.</span><span class="n">wait_for_termination</span><span class="p">()</span>
+    <span class="n">leader_client_server</span><span class="o">.</span><span class="n">wait_for_termination</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="check_new_leader">
+<a class="viewcode-back" href="../modules.html#server.check_new_leader">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">check_new_leader</span><span class="p">(</span><span class="n">min_follower</span><span class="p">,</span> <span class="n">follower_state</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Checks if the new leader is alive and updates follower state accordingly.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        min_follower (tuple): (ID, address) of the assumed new leader.</span>
+<span class="sd">        follower_state (dict): The current follower state dictionary.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="n">grpc</span><span class="o">.</span><span class="n">insecure_channel</span><span class="p">(</span><span class="n">min_follower</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+        <span class="n">num_tries</span> <span class="o">=</span> <span class="mi">2</span>
+        <span class="n">stub</span> <span class="o">=</span> <span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">LeaderServiceStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+        <span class="n">success</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_tries</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">response</span> <span class="o">=</span> <span class="n">stub</span><span class="o">.</span><span class="n">CheckLeader</span><span class="p">(</span><span class="n">spec_pb2</span><span class="o">.</span><span class="n">Empty</span><span class="p">())</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">error_code</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;New leader is alive&#39;</span><span class="p">)</span>
+                    <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;leader_address&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">min_follower</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                    <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;leader_id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">min_follower</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="n">success</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># remove the min follower from the list</span>
+                    <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;followers&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">min_follower</span><span class="p">)</span>
+            <span class="k">except</span><span class="p">:</span>
+                <span class="k">pass</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">success</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;New leader is dead&#39;</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;followers&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">min_follower</span><span class="p">)</span>
+            <span class="k">except</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Error removing the follower&#39;</span><span class="p">)</span>
+                <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="follower_heart_beat_checker">
+<a class="viewcode-back" href="../modules.html#server.follower_heart_beat_checker">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">follower_heart_beat_checker</span><span class="p">(</span><span class="n">follower_state</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Periodically checks if the leader is alive and initiates election if not.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        follower_state (dict): The current follower state dictionary.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">leader_address</span> <span class="o">=</span> <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;leader_address&#39;</span><span class="p">]</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Heartbeat check&quot;</span><span class="p">,</span> <span class="n">leader_address</span><span class="p">)</span>
+
+        <span class="c1"># Check if the leader is alive</span>
+        <span class="c1"># If not start the election process</span>
+        <span class="k">with</span> <span class="n">grpc</span><span class="o">.</span><span class="n">insecure_channel</span><span class="p">(</span><span class="n">leader_address</span><span class="p">)</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+            <span class="n">num_tries</span> <span class="o">=</span> <span class="mi">2</span>
+            <span class="n">success</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_tries</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">stub</span> <span class="o">=</span> <span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">LeaderServiceStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+                    <span class="n">heartbeat_request</span> <span class="o">=</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">Empty</span><span class="p">()</span>
+                    <span class="n">response</span> <span class="o">=</span> <span class="n">stub</span><span class="o">.</span><span class="n">HeartBeat</span><span class="p">(</span><span class="n">heartbeat_request</span><span class="p">)</span>
+                    <span class="c1"># print(response, &quot;Leader is alive&quot;)</span>
+                    <span class="n">success</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="k">break</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="n">num_tries</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Leader is not alive, starting election process.&quot;</span><span class="p">)</span>
+                        <span class="c1"># Start the election process</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">success</span><span class="p">:</span>
+                <span class="n">followers</span> <span class="o">=</span> <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;followers&#39;</span><span class="p">]</span>
+                <span class="n">min_follower</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">followers</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="nb">min</span><span class="p">(</span>
+                    <span class="n">followers</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+                <span class="c1"># election policy</span>
+                <span class="c1"># if you are smallest id become the leader</span>
+                <span class="c1"># if not wait for a new leader and then try again</span>
+                <span class="k">if</span> <span class="n">min_follower</span> <span class="o">==</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">int</span><span class="p">(</span><span class="n">server_id</span><span class="p">)</span> <span class="o">&lt;</span> <span class="nb">int</span><span class="p">(</span><span class="n">min_follower</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+                    <span class="c1"># become the new leader</span>
+                    <span class="k">return</span> <span class="n">upgrade_follower</span><span class="p">(</span><span class="n">follower_state</span><span class="p">)</span>
+
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># check if the new follower becomes the leader if they can&#39;t be</span>
+                    <span class="c1"># delete them and assign yourself</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Waiting for a new leader!&#39;</span><span class="p">)</span>
+                    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+                    <span class="c1"># check if the new leader is alive</span>
+                    <span class="c1"># otherwise assume that leader is dead and remove it from your list</span>
+                    <span class="n">check_new_leader</span><span class="p">(</span><span class="n">min_follower</span><span class="p">,</span> <span class="n">follower_state</span><span class="p">)</span>
+
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="leader_routine">
+<a class="viewcode-back" href="../modules.html#server.leader_routine">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">leader_routine</span><span class="p">(</span>
+    <span class="n">server_id</span><span class="p">,</span> <span class="n">internal_address</span><span class="p">,</span> <span class="n">client_address</span><span class="p">,</span> <span class="n">leader_address</span><span class="o">=</span><span class="kc">None</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Bootstraps the leader server and its components.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        server_id (str): Unique server identifier.</span>
+<span class="sd">        internal_address (str): gRPC address for internal leader-follower communication.</span>
+<span class="sd">        client_address (str): gRPC address for client-leader communication.</span>
+<span class="sd">        leader_address (str, optional): Address of current leader (unused for leaders).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">database_url</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;sqlite:///chat_</span><span class="si">{</span><span class="n">server_id</span><span class="si">}</span><span class="s1">.db&#39;</span>
+    <span class="n">database_engine</span> <span class="o">=</span> <span class="n">init_db</span><span class="p">(</span><span class="n">database_url</span><span class="p">)</span>
+
+    <span class="n">SessionFactory</span> <span class="o">=</span> <span class="n">get_session_factory</span><span class="p">(</span><span class="n">database_engine</span><span class="p">)</span>
+
+    <span class="n">leader_state</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;leader_id&#39;</span><span class="p">:</span> <span class="n">server_id</span><span class="p">,</span>
+        <span class="s1">&#39;leader_address&#39;</span><span class="p">:</span> <span class="n">internal_address</span><span class="p">,</span>
+        <span class="s1">&#39;followers&#39;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s1">&#39;db_engine&#39;</span><span class="p">:</span> <span class="n">database_engine</span><span class="p">,</span>
+        <span class="s1">&#39;db_session&#39;</span><span class="p">:</span> <span class="n">SessionFactory</span><span class="p">,</span>
+        <span class="s1">&#39;update_queue&#39;</span><span class="p">:</span> <span class="n">queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">(),</span>
+        <span class="s1">&#39;client_address&#39;</span><span class="p">:</span> <span class="n">client_address</span>
+    <span class="p">}</span>
+
+    <span class="c1"># follower communication</span>
+    <span class="n">leader_server</span> <span class="o">=</span> <span class="n">serve_leader_follower</span><span class="p">(</span><span class="n">leader_state</span><span class="p">)</span>
+
+    <span class="c1"># Start a separate thread to send updates to followers</span>
+    <span class="n">update_thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span>
+        <span class="n">target</span><span class="o">=</span><span class="n">update_followers</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">leader_state</span><span class="p">,))</span>
+    <span class="n">update_thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+    <span class="c1"># start client server</span>
+    <span class="n">clinet_server</span> <span class="o">=</span> <span class="n">serve_leader_client</span><span class="p">(</span><span class="n">leader_state</span><span class="p">)</span>
+
+    <span class="c1"># wait for both</span>
+    <span class="n">leader_server</span><span class="o">.</span><span class="n">wait_for_termination</span><span class="p">()</span>
+    <span class="n">clinet_server</span><span class="o">.</span><span class="n">wait_for_termination</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="follower_routine">
+<a class="viewcode-back" href="../modules.html#server.follower_routine">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">follower_routine</span><span class="p">(</span><span class="n">server_id</span><span class="p">,</span> <span class="n">internal_address</span><span class="p">,</span> <span class="n">client_address</span><span class="p">,</span> <span class="n">leader_address</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Bootstraps the follower server, registers with leader, and starts heartbeat thread.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        server_id (str): Unique server identifier.</span>
+<span class="sd">        internal_address (str): Address used for internal leader-follower communication.</span>
+<span class="sd">        client_address (str): gRPC address for client-follower communication.</span>
+<span class="sd">        leader_address (str): Address of the current leader.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">database_url</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;sqlite:///chat_</span><span class="si">{</span><span class="n">server_id</span><span class="si">}</span><span class="s1">.db&#39;</span>
+    <span class="n">database_engine</span> <span class="o">=</span> <span class="n">init_db</span><span class="p">(</span><span class="n">database_url</span><span class="p">,</span> <span class="n">drop_tables</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">SessionFactory</span> <span class="o">=</span> <span class="n">get_session_factory</span><span class="p">(</span><span class="n">database_engine</span><span class="p">)</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">()</span>
+
+    <span class="n">follower_state</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;followers&quot;</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">&quot;leader_address&quot;</span><span class="p">:</span> <span class="n">leader_address</span><span class="p">,</span>
+        <span class="s2">&quot;follower_id&quot;</span><span class="p">:</span> <span class="n">server_id</span><span class="p">,</span>
+        <span class="s2">&quot;follower_address&quot;</span><span class="p">:</span> <span class="n">internal_address</span><span class="p">,</span>
+        <span class="s2">&quot;database_engine&quot;</span><span class="p">:</span> <span class="n">database_engine</span><span class="p">,</span>
+        <span class="s2">&quot;db_session&quot;</span><span class="p">:</span> <span class="n">SessionFactory</span><span class="p">,</span>
+        <span class="s1">&#39;client_address&#39;</span><span class="p">:</span> <span class="n">client_address</span><span class="p">,</span>
+        <span class="s1">&#39;db_engine&#39;</span><span class="p">:</span> <span class="n">database_engine</span><span class="p">,</span>
+        <span class="s1">&#39;follower_client_server&#39;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s1">&#39;database_url&#39;</span><span class="p">:</span> <span class="n">database_url</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="c1"># start internal server for follower</span>
+    <span class="n">follower_server</span> <span class="o">=</span> <span class="n">server_follower_leader</span><span class="p">(</span>
+        <span class="n">follower_state</span>
+    <span class="p">)</span>
+
+    <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;follower_leader_server&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">follower_server</span>
+    <span class="c1"># send message to the leaders registe method</span>
+    <span class="n">request_update</span><span class="p">(</span><span class="n">follower_state</span><span class="p">)</span>
+
+    <span class="c1"># create a thread for the heart beat checker</span>
+    <span class="n">heart_beat_thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span>
+        <span class="n">target</span><span class="o">=</span><span class="n">follower_heart_beat_checker</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">follower_state</span><span class="p">,</span> <span class="p">))</span>
+    <span class="n">heart_beat_thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+    <span class="n">clinet_server</span> <span class="o">=</span> <span class="n">serve_follower_client</span><span class="p">(</span><span class="n">follower_state</span><span class="p">)</span>
+    <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;follower_client_server&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">clinet_server</span>
+    <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;heartbeat_thread&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">heart_beat_thread</span>
+    <span class="n">clinet_server</span><span class="o">.</span><span class="n">wait_for_termination</span><span class="p">()</span>
+    <span class="n">follower_server</span><span class="o">.</span><span class="n">wait_for_termination</span><span class="p">()</span></div>
+
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">argparse</span>
+
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
+        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Start a chat server as a leader or a follower.&quot;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;server_id&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Unique server ID.&quot;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;type&quot;</span><span class="p">,</span> <span class="n">choices</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;leader&quot;</span><span class="p">,</span> <span class="s2">&quot;follower&quot;</span><span class="p">],</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Server type: leader or follower.&quot;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;client_address&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Server address to communicate client in the format &lt; host &gt; : &lt; port &gt;&quot;</span>
+    <span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;internal_address&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Server address to communicate internally in the format &lt; host &gt; : &lt; port &gt;&quot;</span>
+    <span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;--leader_address&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Leader server address (required for follower servers).&quot;</span><span class="p">)</span>
+
+    <span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">()</span>
+
+    <span class="n">server_id</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">server_id</span>
+    <span class="n">server_type</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">type</span>
+    <span class="n">client_address</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">client_address</span>
+    <span class="n">internal_address</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">internal_address</span>
+    <span class="n">leader_address</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">leader_address</span>
+
+    <span class="k">if</span> <span class="n">server_type</span> <span class="o">==</span> <span class="s2">&quot;follower&quot;</span> <span class="ow">and</span> <span class="n">leader_address</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Follower servers require the --leader_address option.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">server_type</span> <span class="o">==</span> <span class="s1">&#39;leader&#39;</span><span class="p">:</span>
+        <span class="n">leader_routine</span><span class="p">(</span><span class="n">server_id</span><span class="p">,</span> <span class="n">internal_address</span><span class="p">,</span> <span class="n">client_address</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">follower_routine</span><span class="p">(</span><span class="n">server_id</span><span class="p">,</span> <span class="n">internal_address</span><span class="p">,</span>
+                      <span class="n">client_address</span><span class="p">,</span> <span class="n">leader_address</span><span class="p">)</span>
+
+    <span class="c1"># incase follower is upgraded to leader</span>
+    <span class="c1"># keep the main thread alive</span>
+    <span class="c1"># for the new leader to run</span>
+    <span class="n">stop_event</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
+    <span class="n">stop_event</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Manasvi Goyal and Sukanya Krishna.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

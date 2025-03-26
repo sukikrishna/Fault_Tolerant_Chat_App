@@ -1,0 +1,553 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>base_client &mdash; Distributed Chat App with Replication and Persistance 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            Distributed Chat App with Replication and Persistance
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../modules.html">Chat Application Modules</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Distributed Chat App with Replication and Persistance</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Module code</a></li>
+      <li class="breadcrumb-item active">base_client</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for base_client</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">grpc</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">spec_pb2_grpc</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">spec_pb2</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">StatusCode</span>
+
+
+<div class="viewcode-block" id="reconnect_on_error">
+<a class="viewcode-back" href="../modules.html#base_client.reconnect_on_error">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">reconnect_on_error</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Decorator to automatically reconnect and retry gRPC calls if the server is unavailable.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes the reconnect_on_error decorator.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            method (Callable): The method to be wrapped with retry logic.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">method</span> <span class="o">=</span> <span class="n">method</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__get__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">instance</span><span class="p">,</span> <span class="n">owner</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Supports instance method binding for decorated functions.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            instance (object): The instance that owns the method.</span>
+<span class="sd">            owner (type): The class that owns the method.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Callable: A bound method that wraps the original call with error handling.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">instance</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span>
+        <span class="k">return</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="fm">__call__</span><span class="p">,</span> <span class="n">instance</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">instance</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handles retry logic when a gRPC error occurs.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            instance (object): The instance to call the method on.</span>
+<span class="sd">            *args: Positional arguments for the wrapped method.</span>
+<span class="sd">            **kwargs: Keyword arguments for the wrapped method.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Any: The result of the wrapped method call.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            grpc.RpcError: If all retry attempts fail or an unhandled error occurs.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">max_attempts</span> <span class="o">=</span> <span class="mi">5</span>
+        <span class="k">for</span> <span class="n">attempt</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_attempts</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">method</span><span class="p">(</span><span class="n">instance</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">code</span><span class="p">()</span> <span class="o">==</span> <span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">UNAVAILABLE</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Server is unavailable (attempt </span><span class="si">{</span><span class="n">attempt</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">max_attempts</span><span class="si">}</span><span class="s2">). Trying to reconnect...&quot;</span><span class="p">)</span>
+                    <span class="n">instance</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="n">attempt</span> <span class="o">==</span> <span class="n">max_attempts</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+                        <span class="k">raise</span>  <span class="c1"># Re-raise on the last attempt</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="k">raise</span></div>
+
+
+
+<div class="viewcode-block" id="ChatClientBase">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ChatClientBase</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addresses</span><span class="p">,</span> <span class="n">max_retries</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">retry_interval</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes the base client and attempts to connect to a server.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            addresses (List[str]): List of server addresses to try.</span>
+<span class="sd">            max_retries (int): Number of retry attempts for server connection.</span>
+<span class="sd">            retry_interval (int): Delay between retry attempts in seconds.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">user_session_id</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">addresses</span> <span class="o">=</span> <span class="n">addresses</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_retries</span> <span class="o">=</span> <span class="n">max_retries</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">retry_interval</span> <span class="o">=</span> <span class="n">retry_interval</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">channel</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stub</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+
+<div class="viewcode-block" id="ChatClientBase.exit_">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.exit_">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">exit_</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Placeholder for cleanup or exit logic when a connection fails.&quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="ChatClientBase.relogin">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.relogin">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">relogin</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attempts to maintain the user session when reconnecting to a new server.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            bool: True if the session was successfully restored, False otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">user_session_id</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">reconnect_with_session</span><span class="p">():</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Successfully reconnected with existing session&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Session expired, please log in again&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">user_session_id</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+            <span class="k">return</span> <span class="kc">False</span></div>
+
+
+    <span class="c1"># def connect(self):</span>
+    <span class="c1">#     &quot;&quot;&quot;Tries to connect to the leader server and establish a gRPC stub.</span>
+
+    <span class="c1">#     Tries multiple addresses and retries connections if needed. If a session</span>
+    <span class="c1">#     is already active, it attempts to verify its validity on the new server.</span>
+    <span class="c1">#     &quot;&quot;&quot;</span>
+    <span class="c1">#     with self.lock:</span>
+    <span class="c1">#         # Check the connection using a simple request like ListUsers</span>
+    <span class="c1">#         try:</span>
+    <span class="c1">#             response = self.stub.ListUsers(spec_pb2.ListUsersRequest(wildcard=&quot;*&quot;))</span>
+    <span class="c1">#             if response:</span>
+    <span class="c1">#                 print(&quot;Connection is active&quot;)</span>
+    <span class="c1">#                 return</span>
+    <span class="c1">#         except (Exception, grpc.RpcError) as e:</span>
+    <span class="c1">#             pass</span>
+
+    <span class="c1">#         if len(self.addresses) == 0:</span>
+    <span class="c1">#             print(&quot;No server is available.&quot;)</span>
+    <span class="c1">#             return</span>
+
+    <span class="c1">#         tried = set()</span>
+    <span class="c1">#         retries = 0</span>
+            
+    <span class="c1">#         # Try all available addresses</span>
+    <span class="c1">#         while len(tried) &lt; len(self.addresses) and retries &lt; self.max_retries:</span>
+    <span class="c1">#             current_address = self.addresses[0]</span>
+                
+    <span class="c1">#             try:</span>
+    <span class="c1">#                 print(f&quot;Trying to connect to {current_address}&quot;)</span>
+    <span class="c1">#                 self.channel = grpc.insecure_channel(current_address)</span>
+    <span class="c1">#                 self.stub = spec_pb2_grpc.ClientAccountStub(self.channel)</span>
+    <span class="c1">#                 response = self.stub.ListUsers(spec_pb2.ListUsersRequest(wildcard=&quot;*&quot;))</span>
+                    
+    <span class="c1">#                 if response:</span>
+    <span class="c1">#                     print(f&quot;Connected to the server at {current_address}&quot;)</span>
+    <span class="c1">#                     # Successfully connected, keep this address as the first one</span>
+    <span class="c1">#                     return</span>
+                        
+    <span class="c1">#             except grpc.RpcError as e:</span>
+    <span class="c1">#                 if e.code() == grpc.StatusCode.UNIMPLEMENTED:</span>
+    <span class="c1">#                     # We&#39;re talking to a follower, move this address to the end</span>
+    <span class="c1">#                     print(f&quot;Address {current_address} is a follower, moving to next address&quot;)</span>
+    <span class="c1">#                 else:</span>
+    <span class="c1">#                     print(f&quot;Connection to {current_address} failed: {e.code()}&quot;)</span>
+                        
+    <span class="c1">#                 # Mark this address as tried</span>
+    <span class="c1">#                 tried.add(current_address)</span>
+                    
+    <span class="c1">#                 # Move this address to the end and try the next one</span>
+    <span class="c1">#                 self.addresses.append(self.addresses.pop(0))</span>
+    <span class="c1">#                 time.sleep(self.retry_interval)</span>
+                    
+    <span class="c1">#             except Exception as e:</span>
+    <span class="c1">#                 print(f&quot;Unexpected error connecting to {current_address}: {e}&quot;)</span>
+    <span class="c1">#                 tried.add(current_address)</span>
+    <span class="c1">#                 self.addresses.append(self.addresses.pop(0))</span>
+    <span class="c1">#                 time.sleep(self.retry_interval)</span>
+                    
+    <span class="c1">#             retries += 1</span>
+                
+    <span class="c1">#             # If we&#39;ve tried all addresses, reset and try again (up to max_retries)</span>
+    <span class="c1">#             if len(tried) &gt;= len(self.addresses):</span>
+    <span class="c1">#                 if retries &lt; self.max_retries:</span>
+    <span class="c1">#                     print(f&quot;Tried all addresses, retrying (attempt {retries}/{self.max_retries})&quot;)</span>
+    <span class="c1">#                     tried = set()  # Reset tried set</span>
+    <span class="c1">#                     time.sleep(self.retry_interval)</span>
+            
+    <span class="c1">#         # If we reach here, we couldn&#39;t connect to any server</span>
+    <span class="c1">#         print(&quot;Failed to establish connection after trying all available servers.&quot;)</span>
+            
+    <span class="c1">#         if self.user_session_id:</span>
+    <span class="c1">#             print(&quot;Attempting to relogin with existing session&quot;)</span>
+    <span class="c1">#             self.relogin()</span>
+
+
+    <span class="c1"># def connect(self):</span>
+    <span class="c1">#     with self.lock:</span>
+    <span class="c1">#         for _ in range(len(self.addresses)):</span>
+    <span class="c1">#             current_address = self.addresses[0]</span>
+    <span class="c1">#             print(f&quot;Trying to connect to {current_address}&quot;)</span>
+
+    <span class="c1">#             try:</span>
+    <span class="c1">#                 channel = grpc.insecure_channel(current_address)</span>
+    <span class="c1">#                 stub = spec_pb2_grpc.ClientAccountStub(channel)</span>
+    <span class="c1">#                 response = stub.ListUsers(spec_pb2.ListUsersRequest(wildcard=&quot;*&quot;))</span>
+    <span class="c1">#                 # success – valid leader</span>
+    <span class="c1">#                 self.channel = channel</span>
+    <span class="c1">#                 self.stub = stub</span>
+    <span class="c1">#                 print(f&quot;Connected to the server at {current_address}&quot;)</span>
+    <span class="c1">#                 return</span>
+    <span class="c1">#             except grpc.RpcError as e:</span>
+    <span class="c1">#                 if e.code() == grpc.StatusCode.FAILED_PRECONDITION:</span>
+    <span class="c1">#                     print(f&quot;{current_address} is a follower, skipping.&quot;)</span>
+    <span class="c1">#                 else:</span>
+    <span class="c1">#                     print(f&quot;Connection to {current_address} failed: {e.code()}&quot;)</span>
+
+    <span class="c1">#             self.addresses.append(self.addresses.pop(0))</span>
+    <span class="c1">#             time.sleep(self.retry_interval)</span>
+
+    <span class="c1">#         print(&quot;Failed to establish connection after trying all available servers.&quot;)</span>
+
+
+<div class="viewcode-block" id="ChatClientBase.connect">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.connect">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">connect</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Tries to connect to the leader server and establish a gRPC stub.</span>
+
+<span class="sd">        Tries multiple addresses and retries connections if needed. If a session</span>
+<span class="sd">        is already active, it attempts to verify its validity on the new server.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        
+        <span class="n">hidden_ports</span> <span class="o">=</span> <span class="p">{</span><span class="mi">2635</span><span class="p">,</span> <span class="mi">2637</span><span class="p">,</span> <span class="mi">2639</span><span class="p">}</span>  <span class="c1"># Define your hidden/test ports</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addresses</span><span class="p">)):</span>
+                <span class="n">current_address</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">addresses</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">host</span><span class="p">,</span> <span class="n">port</span> <span class="o">=</span> <span class="n">current_address</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)</span>
+                <span class="n">port</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">port</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">port</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">hidden_ports</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Trying to connect to </span><span class="si">{</span><span class="n">current_address</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">channel</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">insecure_channel</span><span class="p">(</span><span class="n">current_address</span><span class="p">)</span>
+                    <span class="n">stub</span> <span class="o">=</span> <span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">ClientAccountStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+                    <span class="n">response</span> <span class="o">=</span> <span class="n">stub</span><span class="o">.</span><span class="n">ListUsers</span><span class="p">(</span><span class="n">spec_pb2</span><span class="o">.</span><span class="n">ListUsersRequest</span><span class="p">(</span><span class="n">wildcard</span><span class="o">=</span><span class="s2">&quot;*&quot;</span><span class="p">))</span>
+
+                    <span class="bp">self</span><span class="o">.</span><span class="n">channel</span> <span class="o">=</span> <span class="n">channel</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">stub</span> <span class="o">=</span> <span class="n">stub</span>
+
+                    <span class="k">if</span> <span class="n">port</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">hidden_ports</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Connected to the server at </span><span class="si">{</span><span class="n">current_address</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="k">return</span>
+                <span class="k">except</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">code</span><span class="p">()</span> <span class="o">==</span> <span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">FAILED_PRECONDITION</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">port</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">hidden_ports</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">current_address</span><span class="si">}</span><span class="s2"> is a follower, skipping.&quot;</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">port</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">hidden_ports</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Connection to </span><span class="si">{</span><span class="n">current_address</span><span class="si">}</span><span class="s2"> failed: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">code</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">addresses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addresses</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">retry_interval</span><span class="p">)</span>
+
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Failed to establish connection after trying all available servers.&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ChatClientBase.reconnect_with_session">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.reconnect_with_session">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reconnect_with_session</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Attempts to reconnect while maintaining the same session.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            bool: True if the session is still valid after reconnecting, False otherwise.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">user_session_id</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        
+        <span class="c1"># Try to connect to any available server</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+        
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">stub</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        
+        <span class="c1"># Verify if the session is still valid</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># Use a lightweight call to verify the session</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stub</span><span class="o">.</span><span class="n">GetUnreadCounts</span><span class="p">(</span>
+                <span class="n">spec_pb2</span><span class="o">.</span><span class="n">SessionRequest</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">user_session_id</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="c1"># If we don&#39;t get an error code for not logged in, session is valid</span>
+            <span class="c1"># return response.error_code != grpc.StatusCode.USER_NOT_LOGGED_IN</span>
+            <span class="k">return</span> <span class="n">response</span><span class="o">.</span><span class="n">error_code</span> <span class="o">!=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_NOT_LOGGED_IN</span>
+        <span class="k">except</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span></div>
+
+
+<div class="viewcode-block" id="ChatClientBase.list_users">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.list_users">[docs]</a>
+    <span class="nd">@reconnect_on_error</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">list_users</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wildcard</span><span class="o">=</span><span class="s2">&quot;*&quot;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fetches a list of users matching the given wildcard.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            wildcard (str): Username pattern. Defaults to &quot;*&quot;.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            List[User]: A list of user objects.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">ListUsersRequest</span><span class="p">(</span><span class="n">wildcard</span><span class="o">=</span><span class="n">wildcard</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stub</span><span class="o">.</span><span class="n">ListUsers</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span><span class="o">.</span><span class="n">user</span></div>
+
+
+
+<div class="viewcode-block" id="ChatClientBase.create_account">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.create_account">[docs]</a>
+    <span class="nd">@reconnect_on_error</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">create_account</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">username</span><span class="p">,</span> <span class="n">password</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a new user account.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            username (str): Desired username.</span>
+<span class="sd">            password (str): Desired password.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: gRPC server response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stub</span><span class="o">.</span><span class="n">CreateAccount</span><span class="p">(</span>
+            <span class="n">spec_pb2</span><span class="o">.</span><span class="n">CreateAccountRequest</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="n">username</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="n">password</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">response</span></div>
+
+
+<div class="viewcode-block" id="ChatClientBase.login">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.login">[docs]</a>
+    <span class="nd">@reconnect_on_error</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">login</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">username</span><span class="p">,</span> <span class="n">password</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Logs the user in and retrieves a session ID.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            username (str): Account username.</span>
+<span class="sd">            password (str): Account password.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: gRPC server response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stub</span><span class="o">.</span><span class="n">Login</span><span class="p">(</span>
+            <span class="n">spec_pb2</span><span class="o">.</span><span class="n">LoginRequest</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="n">username</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="n">password</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">response</span></div>
+
+
+<div class="viewcode-block" id="ChatClientBase.send_message">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.send_message">[docs]</a>
+    <span class="nd">@reconnect_on_error</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">send_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">to</span><span class="p">,</span> <span class="n">message</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sends a message to another user.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            to (str): Recipient username.</span>
+<span class="sd">            message (str): Message content.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: gRPC server response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stub</span><span class="o">.</span><span class="n">Send</span><span class="p">(</span>
+            <span class="n">spec_pb2</span><span class="o">.</span><span class="n">SendRequest</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">user_session_id</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="n">message</span><span class="p">,</span> <span class="n">to</span><span class="o">=</span><span class="n">to</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">response</span></div>
+
+
+<div class="viewcode-block" id="ChatClientBase.logout">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.logout">[docs]</a>
+    <span class="nd">@reconnect_on_error</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">logout</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Logs out the current user session.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: gRPC server response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stub</span><span class="o">.</span><span class="n">Logout</span><span class="p">(</span>
+            <span class="n">spec_pb2</span><span class="o">.</span><span class="n">DeleteAccountRequest</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">user_session_id</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">response</span></div>
+
+
+<div class="viewcode-block" id="ChatClientBase.delete_account">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.delete_account">[docs]</a>
+    <span class="nd">@reconnect_on_error</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">delete_account</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deletes the currently logged-in user&#39;s account.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: gRPC server response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stub</span><span class="o">.</span><span class="n">DeleteAccount</span><span class="p">(</span>
+            <span class="n">spec_pb2</span><span class="o">.</span><span class="n">DeleteAccountRequest</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">user_session_id</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">response</span></div>
+
+
+<div class="viewcode-block" id="ChatClientBase.receive_messages">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.receive_messages">[docs]</a>
+    <span class="nd">@reconnect_on_error</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">receive_messages</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Retrieves unread messages for the logged-in user.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Messages: A message list from the server.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">msgs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stub</span><span class="o">.</span><span class="n">GetMessages</span><span class="p">(</span>
+            <span class="n">spec_pb2</span><span class="o">.</span><span class="n">ReceiveRequest</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">user_session_id</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">msgs</span></div>
+
+
+<div class="viewcode-block" id="ChatClientBase.get_chat">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.get_chat">[docs]</a>
+    <span class="nd">@reconnect_on_error</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_chat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">recipient</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Retrieves full chat history with a specific user.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            recipient (str): Username of the chat partner.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Messages: A list of all messages between the two users.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">msgs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stub</span><span class="o">.</span><span class="n">GetChat</span><span class="p">(</span>
+            <span class="n">spec_pb2</span><span class="o">.</span><span class="n">ChatRequest</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">user_session_id</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="n">recipient</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">msgs</span></div>
+
+    
+<div class="viewcode-block" id="ChatClientBase.delete_messages">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.delete_messages">[docs]</a>
+    <span class="nd">@reconnect_on_error</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">delete_messages</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message_ids</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deletes specific messages by ID.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            message_ids (List[int]): List of message IDs to delete.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: gRPC server response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">DeleteMessagesRequest</span><span class="p">(</span>
+            <span class="n">session_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">user_session_id</span><span class="p">,</span>
+            <span class="n">message_ids</span><span class="o">=</span><span class="n">message_ids</span>
+        <span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stub</span><span class="o">.</span><span class="n">DeleteMessages</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span></div>
+
+    
+<div class="viewcode-block" id="ChatClientBase.get_unread_counts">
+<a class="viewcode-back" href="../modules.html#base_client.ChatClientBase.get_unread_counts">[docs]</a>
+    <span class="nd">@reconnect_on_error</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_unread_counts</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fetches count of unread messages grouped by sender.&quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stub</span><span class="o">.</span><span class="n">GetUnreadCounts</span><span class="p">(</span>
+            <span class="n">spec_pb2</span><span class="o">.</span><span class="n">SessionRequest</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">user_session_id</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Manasvi Goyal and Sukanya Krishna.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,921 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>leader_server &mdash; Distributed Chat App with Replication and Persistance 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            Distributed Chat App with Replication and Persistance
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../modules.html">Chat Application Modules</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Distributed Chat App with Replication and Persistance</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Module code</a></li>
+      <li class="breadcrumb-item active">leader_server</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for leader_server</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">concurrent</span><span class="w"> </span><span class="kn">import</span> <span class="n">futures</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">queue</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">grpc</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">spec_pb2</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">spec_pb2_grpc</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">StatusCode</span><span class="p">,</span> <span class="n">StatusMessages</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">models</span><span class="w"> </span><span class="kn">import</span> <span class="n">UserModel</span><span class="p">,</span> <span class="n">MessageModel</span><span class="p">,</span> <span class="n">DeletedMessageModel</span><span class="p">,</span> <span class="n">init_db</span><span class="p">,</span> <span class="n">get_session_factory</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy.orm</span><span class="w"> </span><span class="kn">import</span> <span class="n">scoped_session</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">or_</span><span class="p">,</span> <span class="n">and_</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">google.protobuf.timestamp_pb2</span><span class="w"> </span><span class="kn">import</span> <span class="n">Timestamp</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pickle</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy.orm</span><span class="w"> </span><span class="kn">import</span> <span class="n">sessionmaker</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">inspect</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">queue</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">follower_server</span><span class="w"> </span><span class="kn">import</span> <span class="o">*</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">fnmatch</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
+
+<div class="viewcode-block" id="hash_password">
+<a class="viewcode-back" href="../modules.html#leader_server.hash_password">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">hash_password</span><span class="p">(</span><span class="n">password</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hashes the given password using SHA-256.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        password (str): The plain text password.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        str: The hashed password.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="n">password</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="fully_load">
+<a class="viewcode-back" href="../modules.html#leader_server.fully_load">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fully_load</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Forces loading of all column attributes in a SQLAlchemy ORM object.&quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">attr</span> <span class="ow">in</span> <span class="n">inspect</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="vm">__class__</span><span class="p">)</span><span class="o">.</span><span class="n">mapper</span><span class="o">.</span><span class="n">column_attrs</span><span class="p">:</span>
+        <span class="nb">getattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">attr</span><span class="o">.</span><span class="n">key</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ClientService">
+<a class="viewcode-back" href="../modules.html#leader_server.ClientService">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ClientService</span><span class="p">(</span><span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">ClientAccountServicer</span><span class="p">):</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_session</span><span class="p">,</span> <span class="n">update_queue</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes the ClientService.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            db_session (SessionFactory): SQLAlchemy session factory.</span>
+<span class="sd">            update_queue (Queue): Queue to send update events to followers.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db_session</span> <span class="o">=</span> <span class="n">db_session</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">update_queue</span> <span class="o">=</span> <span class="n">update_queue</span>
+
+<div class="viewcode-block" id="ClientService.CreateAccount">
+<a class="viewcode-back" href="../modules.html#leader_server.ClientService.CreateAccount">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">CreateAccount</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handles user account creation.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (CreateAccountRequest): gRPC request with username and password.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context object.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: Response indicating success or failure.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">session</span> <span class="o">=</span> <span class="n">scoped_session</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db_session</span><span class="p">)</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_code</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">OK</span><span class="p">)</span>
+
+        <span class="n">user_exists</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span>
+            <span class="n">username</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">username</span><span class="p">)</span><span class="o">.</span><span class="n">scalar</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">user_exists</span><span class="p">:</span>
+            <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_NAME_EXISTS</span>
+            <span class="n">status_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span><span class="n">status_code</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># create a new user</span>
+            <span class="n">hashed_password</span> <span class="o">=</span> <span class="n">hash_password</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">password</span><span class="p">)</span>
+            <span class="n">new_user</span> <span class="o">=</span> <span class="n">UserModel</span><span class="p">(</span><span class="n">username</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">username</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="n">hashed_password</span><span class="p">)</span>
+
+            <span class="n">session</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">new_user</span><span class="p">)</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">SUCCESS</span>
+            <span class="n">status_message</span> <span class="o">=</span> <span class="s2">&quot;Account created successfully!!&quot;</span>
+
+            <span class="c1"># get added user</span>
+            <span class="n">added_user</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span>
+                <span class="n">username</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">username</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+            <span class="n">fully_load</span><span class="p">(</span><span class="n">added_user</span><span class="p">)</span>
+            <span class="n">update_info</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">((</span><span class="s1">&#39;users&#39;</span><span class="p">,</span> <span class="s1">&#39;add&#39;</span><span class="p">,</span> <span class="n">added_user</span><span class="p">))</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">update_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">update_info</span><span class="p">)</span>
+
+        <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">ServerResponse</span><span class="p">(</span><span class="n">error_code</span><span class="o">=</span><span class="n">status_code</span><span class="p">,</span> <span class="n">error_message</span><span class="o">=</span><span class="n">status_message</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ClientService.Login">
+<a class="viewcode-back" href="../modules.html#leader_server.ClientService.Login">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">Login</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handles user login and session ID generation.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (LoginRequest): gRPC request with username and password.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context object.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: Includes session ID if login is successful.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_code</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">OK</span><span class="p">)</span>
+        <span class="n">session</span> <span class="o">=</span> <span class="n">scoped_session</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db_session</span><span class="p">)</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span>
+            <span class="n">username</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">username</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+        <span class="n">session_id</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">user</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_DOESNT_EXIST</span>
+            <span class="n">status_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span><span class="n">status_code</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">user</span><span class="o">.</span><span class="n">password</span> <span class="o">!=</span> <span class="n">hash_password</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">password</span><span class="p">):</span>
+                <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">INCORRECT_PASSWORD</span>
+                <span class="n">status_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span><span class="n">status_code</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">session_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">GenerateSessionID</span><span class="p">()</span>
+                <span class="n">user</span><span class="o">.</span><span class="n">logged_in</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="n">user</span><span class="o">.</span><span class="n">session_id</span> <span class="o">=</span> <span class="n">session_id</span>
+                <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+                <span class="n">fully_load</span><span class="p">(</span><span class="n">user</span><span class="p">)</span>
+                <span class="n">update_info</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">((</span><span class="s1">&#39;users&#39;</span><span class="p">,</span> <span class="s1">&#39;update&#39;</span><span class="p">,</span> <span class="n">user</span><span class="p">))</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">update_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">update_info</span><span class="p">)</span>
+
+
+                <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">SUCCESS</span>
+                <span class="n">status_message</span> <span class="o">=</span> <span class="s2">&quot;Login successful!!&quot;</span>
+                <span class="n">session_id</span> <span class="o">=</span> <span class="n">session_id</span>
+
+        <span class="k">return</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">ServerResponse</span><span class="p">(</span><span class="n">error_code</span><span class="o">=</span><span class="n">status_code</span><span class="p">,</span> <span class="n">error_message</span><span class="o">=</span><span class="n">status_message</span><span class="p">,</span> <span class="n">session_id</span><span class="o">=</span><span class="n">session_id</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ClientService.Send">
+<a class="viewcode-back" href="../modules.html#leader_server.ClientService.Send">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">Send</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Handles sending a message from one user to another.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (SendRequest): gRPC request with message details.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context object.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: Indicates whether the message was sent successfully.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_code</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">OK</span><span class="p">)</span>
+
+        <span class="n">session_id</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">session_id</span>
+        <span class="n">session</span> <span class="o">=</span> <span class="n">scoped_session</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db_session</span><span class="p">)</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span>
+            <span class="n">session_id</span><span class="o">=</span><span class="n">session_id</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">user</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_NOT_LOGGED_IN</span>
+            <span class="n">status_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span><span class="n">status_code</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">receiver</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span>
+                <span class="n">username</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">to</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="n">receiver</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">RECEIVER_DOESNT_EXIST</span>
+                <span class="n">status_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span><span class="n">status_code</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="n">MessageModel</span><span class="p">(</span>
+                    <span class="n">sender_id</span><span class="o">=</span><span class="n">user</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                    <span class="n">receiver_id</span><span class="o">=</span><span class="n">receiver</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                    <span class="n">content</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">message</span>
+                <span class="p">)</span>
+                <span class="n">session</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+                <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+                <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">SUCCESS</span>
+                <span class="n">status_message</span> <span class="o">=</span> <span class="s2">&quot;Message sent successfully!!&quot;</span>
+                <span class="c1"># breakpoint()</span>
+                <span class="c1"># get added message</span>
+                <span class="n">msg2</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">MessageModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span>
+                    <span class="nb">id</span><span class="o">=</span><span class="n">msg</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+                <span class="n">fully_load</span><span class="p">(</span><span class="n">msg2</span><span class="p">)</span>
+                <span class="n">update_info</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">((</span><span class="s1">&#39;messages&#39;</span><span class="p">,</span> <span class="s2">&quot;add&quot;</span><span class="p">,</span> <span class="n">msg2</span><span class="p">))</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">update_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">update_info</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+        <span class="c1"># Remove any remaining session</span>
+        <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">ServerResponse</span><span class="p">(</span><span class="n">error_code</span><span class="o">=</span><span class="n">status_code</span><span class="p">,</span> <span class="n">error_message</span><span class="o">=</span><span class="n">status_message</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ClientService.ListUsers">
+<a class="viewcode-back" href="../modules.html#leader_server.ClientService.ListUsers">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ListUsers</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a list of users matching the optional wildcard.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (ListUsersRequest): Request with optional wildcard filter.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context object.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Users: A list of users and their online statuses.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_code</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">OK</span><span class="p">)</span>
+        <span class="n">users</span> <span class="o">=</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">Users</span><span class="p">()</span>
+        <span class="n">pattern</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">wildcard</span> <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">wildcard</span> <span class="k">else</span> <span class="s2">&quot;*&quot;</span>
+
+        <span class="n">session</span> <span class="o">=</span> <span class="n">scoped_session</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db_session</span><span class="p">)</span>
+        <span class="n">all_users</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">all_users</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">fnmatch</span><span class="o">.</span><span class="n">fnmatch</span><span class="p">(</span><span class="n">user</span><span class="o">.</span><span class="n">username</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span> <span class="n">pattern</span><span class="o">.</span><span class="n">lower</span><span class="p">()):</span>
+                <span class="n">user_</span> <span class="o">=</span> <span class="n">users</span><span class="o">.</span><span class="n">user</span><span class="o">.</span><span class="n">add</span><span class="p">()</span>
+                <span class="n">user_</span><span class="o">.</span><span class="n">username</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">username</span>
+                <span class="n">user_</span><span class="o">.</span><span class="n">status</span> <span class="o">=</span> <span class="s2">&quot;online&quot;</span> <span class="k">if</span> <span class="n">user</span><span class="o">.</span><span class="n">logged_in</span> <span class="k">else</span> <span class="s2">&quot;offline&quot;</span>
+
+        <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">users</span></div>
+
+    
+    
+<div class="viewcode-block" id="ClientService.DeleteMessages">
+<a class="viewcode-back" href="../modules.html#leader_server.ClientService.DeleteMessages">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">DeleteMessages</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deletes specific messages and moves them to the deleted table.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (DeleteMessagesRequest): Request with message IDs and session ID.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context object.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: Indicates success or failure.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">session</span> <span class="o">=</span> <span class="n">scoped_session</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db_session</span><span class="p">)</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">session_id</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">user</span><span class="p">:</span>
+            <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_NOT_LOGGED_IN</span>
+            <span class="n">status_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span><span class="n">status_code</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">messages_to_delete</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">MessageModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
+                    <span class="n">MessageModel</span><span class="o">.</span><span class="n">id</span><span class="o">.</span><span class="n">in_</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">message_ids</span><span class="p">),</span>
+                    <span class="n">or_</span><span class="p">(</span>
+                        <span class="n">MessageModel</span><span class="o">.</span><span class="n">sender_id</span> <span class="o">==</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                        <span class="n">MessageModel</span><span class="o">.</span><span class="n">receiver_id</span> <span class="o">==</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span>
+                    <span class="p">)</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+                <span class="k">for</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">messages_to_delete</span><span class="p">:</span>
+                    <span class="c1"># move to deleted messages table</span>
+                    <span class="n">deleted</span> <span class="o">=</span> <span class="n">DeletedMessageModel</span><span class="p">(</span>
+                        <span class="n">sender_id</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">sender_id</span><span class="p">,</span>
+                        <span class="n">receiver_id</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">receiver_id</span><span class="p">,</span>
+                        <span class="n">content</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">content</span><span class="p">,</span>
+                        <span class="n">is_received</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">is_received</span><span class="p">,</span>
+                        <span class="n">original_message_id</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">id</span>
+                    <span class="p">)</span>
+                    <span class="n">session</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">deleted</span><span class="p">)</span>
+                    <span class="n">session</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+                    <span class="c1"># propagate deletion to followers</span>
+                    <span class="n">update_info</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">((</span><span class="s1">&#39;messages&#39;</span><span class="p">,</span> <span class="s1">&#39;delete&#39;</span><span class="p">,</span> <span class="n">message</span><span class="p">))</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">update_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">update_info</span><span class="p">)</span>
+
+                <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+                <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">SUCCESS</span>
+                <span class="n">status_message</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">messages_to_delete</span><span class="p">)</span><span class="si">}</span><span class="s2"> message(s) deleted successfully.&quot;</span>
+
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">session</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+                <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">INVALID_ARGUMENTS</span>
+                <span class="n">status_message</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+
+        <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">ServerResponse</span><span class="p">(</span><span class="n">error_code</span><span class="o">=</span><span class="n">status_code</span><span class="p">,</span> <span class="n">error_message</span><span class="o">=</span><span class="n">status_message</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ClientService.GetMessages">
+<a class="viewcode-back" href="../modules.html#leader_server.ClientService.GetMessages">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">GetMessages</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fetches unread messages for the logged-in user.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (ReceiveRequest): Request with session ID.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context object.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Messages: List of unread messages.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_code</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">OK</span><span class="p">)</span>
+
+        <span class="n">msgs</span> <span class="o">=</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">Messages</span><span class="p">()</span>
+
+        <span class="n">session</span> <span class="o">=</span> <span class="n">scoped_session</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db_session</span><span class="p">)</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span>
+            <span class="n">session_id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">session_id</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">user</span><span class="p">:</span>
+            <span class="n">msgs</span><span class="o">.</span><span class="n">error_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_NOT_LOGGED_IN</span>
+            <span class="n">msgs</span><span class="o">.</span><span class="n">error_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span>
+                <span class="n">msgs</span><span class="o">.</span><span class="n">error_code</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+
+            <span class="n">messages</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">MessageModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
+                <span class="n">and_</span><span class="p">(</span><span class="n">MessageModel</span><span class="o">.</span><span class="n">receiver_id</span> <span class="o">==</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">MessageModel</span><span class="o">.</span><span class="n">is_received</span> <span class="o">==</span> <span class="kc">False</span><span class="p">))</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">msgs</span><span class="o">.</span><span class="n">error_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">NO_MESSAGES</span>
+                <span class="n">msgs</span><span class="o">.</span><span class="n">error_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span>
+                    <span class="n">msgs</span><span class="o">.</span><span class="n">error_code</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">messages</span><span class="p">:</span>
+                    <span class="c1"># print(message.is_received)</span>
+                    <span class="n">msg</span> <span class="o">=</span> <span class="n">msgs</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">add</span><span class="p">()</span>
+                    <span class="n">msg</span><span class="o">.</span><span class="n">from_</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">sender</span><span class="o">.</span><span class="n">username</span>
+                    <span class="n">msg</span><span class="o">.</span><span class="n">message</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">content</span>
+                    <span class="n">msg</span><span class="o">.</span><span class="n">message_id</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">id</span>
+                    <span class="n">message</span><span class="o">.</span><span class="n">is_received</span> <span class="o">=</span> <span class="kc">True</span>
+
+                <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+                <span class="n">msgs</span><span class="o">.</span><span class="n">error_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">SUCCESS</span>
+                <span class="n">msgs</span><span class="o">.</span><span class="n">error_message</span> <span class="o">=</span> <span class="s2">&quot;Messages received successfully!!&quot;</span>
+
+        <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">msgs</span></div>
+
+
+<div class="viewcode-block" id="ClientService.AcknowledgeReceivedMessages">
+<a class="viewcode-back" href="../modules.html#leader_server.ClientService.AcknowledgeReceivedMessages">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">AcknowledgeReceivedMessages</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Marks messages as received by their IDs.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (AcknowledgeReceivedMessagesRequest): Message IDs to mark.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context object.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: Acknowledgement result.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">session</span> <span class="o">=</span> <span class="n">scoped_session</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db_session</span><span class="p">)</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span>
+            <span class="n">session_id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">session_id</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">user</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_NOT_LOGGED_IN</span>
+            <span class="n">status_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span><span class="n">status_code</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">messages</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">MessageModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
+                <span class="n">MessageModel</span><span class="o">.</span><span class="n">id</span><span class="o">.</span><span class="n">in_</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">message_ids</span><span class="p">),</span>
+                <span class="n">MessageModel</span><span class="o">.</span><span class="n">receiver_id</span> <span class="o">==</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+            <span class="k">for</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">messages</span><span class="p">:</span>
+                <span class="n">message</span><span class="o">.</span><span class="n">is_received</span> <span class="o">=</span> <span class="kc">True</span>
+
+            <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">SUCCESS</span>
+            <span class="n">status_message</span> <span class="o">=</span> <span class="s2">&quot;Messages acknowledged successfully!!&quot;</span>
+
+        <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">ServerResponse</span><span class="p">(</span><span class="n">error_code</span><span class="o">=</span><span class="n">status_code</span><span class="p">,</span> <span class="n">error_message</span><span class="o">=</span><span class="n">status_message</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ClientService.Logout">
+<a class="viewcode-back" href="../modules.html#leader_server.ClientService.Logout">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">Logout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Logs out the current user.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (DeleteAccountRequest): Request with session ID.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context object.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: Logout result.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">session</span> <span class="o">=</span> <span class="n">scoped_session</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db_session</span><span class="p">)</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span>
+            <span class="n">session_id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">session_id</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">user</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">status</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_NOT_LOGGED_IN</span>
+            <span class="n">status_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span><span class="n">status</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">user</span><span class="o">.</span><span class="n">session_id</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">user</span><span class="o">.</span><span class="n">logged_in</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="n">status</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">SUCCESS</span>
+            <span class="n">status_message</span> <span class="o">=</span> <span class="s2">&quot;Logout successful!!&quot;</span>
+
+        <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">ServerResponse</span><span class="p">(</span><span class="n">error_code</span><span class="o">=</span><span class="n">status</span><span class="p">,</span> <span class="n">error_message</span><span class="o">=</span><span class="n">status_message</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ClientService.GetChat">
+<a class="viewcode-back" href="../modules.html#leader_server.ClientService.GetChat">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">GetChat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns full chat history between current user and another user.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (ChatRequest): Includes session ID and target username.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context object.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Messages: List of messages with timestamps.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_code</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">OK</span><span class="p">)</span>
+
+        <span class="n">msgs</span> <span class="o">=</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">Messages</span><span class="p">()</span>
+
+        <span class="n">session</span> <span class="o">=</span> <span class="n">scoped_session</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db_session</span><span class="p">)</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span>
+            <span class="n">session_id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">session_id</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">user</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">msgs</span><span class="o">.</span><span class="n">error_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_NOT_LOGGED_IN</span>
+            <span class="n">msgs</span><span class="o">.</span><span class="n">error_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span>
+                <span class="n">msgs</span><span class="o">.</span><span class="n">error_code</span><span class="p">)</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">msgs</span>
+
+        <span class="n">receiver</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span>
+            <span class="n">username</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">username</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">receiver</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">msgs</span><span class="o">.</span><span class="n">error_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_DOESNT_EXIST</span>
+            <span class="n">msgs</span><span class="o">.</span><span class="n">error_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span>
+                <span class="n">msgs</span><span class="o">.</span><span class="n">error_code</span><span class="p">)</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">msgs</span>
+
+        <span class="n">messages</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">MessageModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
+            <span class="n">or_</span><span class="p">(</span>
+                <span class="n">and_</span><span class="p">(</span><span class="n">MessageModel</span><span class="o">.</span><span class="n">sender_id</span> <span class="o">==</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                    <span class="n">MessageModel</span><span class="o">.</span><span class="n">receiver_id</span> <span class="o">==</span> <span class="n">receiver</span><span class="o">.</span><span class="n">id</span><span class="p">),</span>
+                <span class="n">and_</span><span class="p">(</span><span class="n">MessageModel</span><span class="o">.</span><span class="n">sender_id</span> <span class="o">==</span> <span class="n">receiver</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                    <span class="n">MessageModel</span><span class="o">.</span><span class="n">receiver_id</span> <span class="o">==</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="n">MessageModel</span><span class="o">.</span><span class="n">time_stamp</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">msgs</span><span class="o">.</span><span class="n">error_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">NO_MESSAGES</span>
+            <span class="n">msgs</span><span class="o">.</span><span class="n">error_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span>
+                <span class="n">msgs</span><span class="o">.</span><span class="n">error_code</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">messages</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="n">msgs</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">add</span><span class="p">()</span>
+                <span class="n">msg</span><span class="o">.</span><span class="n">from_</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">sender</span><span class="o">.</span><span class="n">username</span>
+                <span class="n">msg</span><span class="o">.</span><span class="n">message</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">content</span>
+                <span class="n">msg</span><span class="o">.</span><span class="n">message_id</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="n">id</span>
+                <span class="n">timestamp_proto</span> <span class="o">=</span> <span class="n">Timestamp</span><span class="p">()</span>
+                <span class="n">timestamp_proto</span><span class="o">.</span><span class="n">FromDatetime</span><span class="p">(</span><span class="n">message</span><span class="o">.</span><span class="n">time_stamp</span><span class="p">)</span>
+                <span class="n">msg</span><span class="o">.</span><span class="n">time_stamp</span><span class="o">.</span><span class="n">CopyFrom</span><span class="p">(</span><span class="n">timestamp_proto</span><span class="p">)</span>
+
+                <span class="c1"># Mark as received if the current user is the recipient</span>
+                <span class="k">if</span> <span class="n">message</span><span class="o">.</span><span class="n">receiver_id</span> <span class="o">==</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span><span class="p">:</span>
+                    <span class="n">message</span><span class="o">.</span><span class="n">is_received</span> <span class="o">=</span> <span class="kc">True</span>
+
+            <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="n">msgs</span><span class="o">.</span><span class="n">error_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">SUCCESS</span>
+            <span class="n">msgs</span><span class="o">.</span><span class="n">error_message</span> <span class="o">=</span> <span class="s2">&quot;Messages received successfully!!&quot;</span>
+
+        <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">msgs</span></div>
+
+    
+
+<div class="viewcode-block" id="ClientService.GetUnreadCounts">
+<a class="viewcode-back" href="../modules.html#leader_server.ClientService.GetUnreadCounts">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">GetUnreadCounts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns unread message count per sender without marking them as read.&quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">spec_pb2</span><span class="w"> </span><span class="kn">import</span> <span class="n">UnreadSummary</span><span class="p">,</span> <span class="n">UnreadCount</span>
+
+        <span class="n">summary</span> <span class="o">=</span> <span class="n">UnreadSummary</span><span class="p">()</span>
+        <span class="n">session</span> <span class="o">=</span> <span class="n">scoped_session</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db_session</span><span class="p">)</span>
+
+        <span class="n">user</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span><span class="n">session_id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">session_id</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">user</span><span class="p">:</span>
+            <span class="n">summary</span><span class="o">.</span><span class="n">error_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_NOT_LOGGED_IN</span>
+            <span class="n">summary</span><span class="o">.</span><span class="n">error_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span><span class="n">summary</span><span class="o">.</span><span class="n">error_code</span><span class="p">)</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">summary</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">func</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span>
+            <span class="n">UserModel</span><span class="o">.</span><span class="n">username</span><span class="p">,</span>
+            <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">MessageModel</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">UserModel</span><span class="p">,</span> <span class="n">UserModel</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="n">MessageModel</span><span class="o">.</span><span class="n">sender_id</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
+            <span class="n">MessageModel</span><span class="o">.</span><span class="n">receiver_id</span> <span class="o">==</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+            <span class="n">MessageModel</span><span class="o">.</span><span class="n">sender_id</span> <span class="o">!=</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>  <span class="c1"># exclude self-messages</span>
+            <span class="n">MessageModel</span><span class="o">.</span><span class="n">is_received</span> <span class="o">==</span> <span class="kc">False</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">UserModel</span><span class="o">.</span><span class="n">username</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+
+        <span class="k">for</span> <span class="n">sender</span><span class="p">,</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+            <span class="n">summary</span><span class="o">.</span><span class="n">counts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">UnreadCount</span><span class="p">(</span><span class="o">**</span><span class="p">{</span><span class="s2">&quot;from&quot;</span><span class="p">:</span> <span class="n">sender</span><span class="p">,</span> <span class="s2">&quot;count&quot;</span><span class="p">:</span> <span class="n">count</span><span class="p">}))</span>
+
+        <span class="n">summary</span><span class="o">.</span><span class="n">error_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">SUCCESS</span>
+        <span class="n">summary</span><span class="o">.</span><span class="n">error_message</span> <span class="o">=</span> <span class="s2">&quot;Unread counts fetched.&quot;</span>
+        <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">summary</span></div>
+
+
+
+<div class="viewcode-block" id="ClientService.DeleteAccount">
+<a class="viewcode-back" href="../modules.html#leader_server.ClientService.DeleteAccount">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">DeleteAccount</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deletes the current user&#39;s account and related messages.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (DeleteAccountRequest): Request with session ID.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context object.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: Result of the deletion.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">session</span> <span class="o">=</span> <span class="n">scoped_session</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db_session</span><span class="p">)</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">UserModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span>
+            <span class="n">session_id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">session_id</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">user</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">USER_NOT_LOGGED_IN</span>
+            <span class="n">status_message</span> <span class="o">=</span> <span class="n">StatusMessages</span><span class="o">.</span><span class="n">get_error_message</span><span class="p">(</span><span class="n">status_code</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Move user&#39;s messages to deleted_messages table</span>
+            <span class="n">messages_to_delete</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">MessageModel</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
+                <span class="n">MessageModel</span><span class="o">.</span><span class="n">receiver_id</span> <span class="o">==</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+            <span class="k">for</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">messages_to_delete</span><span class="p">:</span>
+                <span class="n">deleted_message</span> <span class="o">=</span> <span class="n">DeletedMessageModel</span><span class="p">(</span>
+                    <span class="n">sender_id</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">sender_id</span><span class="p">,</span>
+                    <span class="n">receiver_id</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">receiver_id</span><span class="p">,</span>
+                    <span class="n">content</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">content</span><span class="p">,</span>
+                    <span class="n">is_received</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">is_received</span><span class="p">,</span>
+                    <span class="n">original_message_id</span><span class="o">=</span><span class="n">message</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">session</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">deleted_message</span><span class="p">)</span>
+                <span class="n">session</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+            <span class="c1"># Delete user</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">user</span><span class="p">)</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+            <span class="n">status_code</span> <span class="o">=</span> <span class="n">StatusCode</span><span class="o">.</span><span class="n">SUCCESS</span>
+            <span class="n">status_message</span> <span class="o">=</span> <span class="s2">&quot;Account deleted successfully!!&quot;</span>
+
+        <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">ServerResponse</span><span class="p">(</span><span class="n">error_code</span><span class="o">=</span><span class="n">status_code</span><span class="p">,</span> <span class="n">error_message</span><span class="o">=</span><span class="n">status_message</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ClientService.GenerateSessionID">
+<a class="viewcode-back" href="../modules.html#leader_server.ClientService.GenerateSessionID">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">GenerateSessionID</span><span class="p">():</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generates a new unique session ID.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            str: A UUID-based session string.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">())</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="fetch_all_data_from_orm">
+<a class="viewcode-back" href="../modules.html#leader_server.fetch_all_data_from_orm">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fetch_all_data_from_orm</span><span class="p">(</span><span class="n">connection</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fetches all ORM table data into a dictionary.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        connection (sqlalchemy.engine.Connection): Database connection.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        dict: A mapping of table names to ORM objects.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">Session</span> <span class="o">=</span> <span class="n">sessionmaker</span><span class="p">(</span><span class="n">bind</span><span class="o">=</span><span class="n">connection</span><span class="p">)</span>
+    <span class="n">session</span> <span class="o">=</span> <span class="n">Session</span><span class="p">()</span>
+
+    <span class="c1"># Get the list of classes defined in your ORM</span>
+    <span class="c1"># Replace with your actual ORM classes</span>
+    <span class="n">orm_classes</span> <span class="o">=</span> <span class="p">[</span><span class="n">UserModel</span><span class="p">,</span> <span class="n">MessageModel</span><span class="p">,</span> <span class="n">DeletedMessageModel</span><span class="p">]</span>
+
+    <span class="k">for</span> <span class="n">orm_class</span> <span class="ow">in</span> <span class="n">orm_classes</span><span class="p">:</span>
+        <span class="n">table_name</span> <span class="o">=</span> <span class="n">orm_class</span><span class="o">.</span><span class="n">__tablename__</span>
+        <span class="n">table_data</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">orm_class</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+        <span class="n">data</span><span class="p">[</span><span class="n">table_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">table_data</span>
+
+    <span class="n">session</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">data</span></div>
+
+
+
+<div class="viewcode-block" id="LeaderService">
+<a class="viewcode-back" href="../modules.html#leader_server.LeaderService">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LeaderService</span><span class="p">(</span><span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">LeaderServiceServicer</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">states</span><span class="p">,</span> <span class="n">db_engine</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes the leader service with server state and DB engine.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            states (dict): Shared leader state dictionary.</span>
+<span class="sd">            db_engine (Engine): SQLAlchemy database engine.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">states</span> <span class="o">=</span> <span class="n">states</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db_engine</span> <span class="o">=</span> <span class="n">db_engine</span>
+
+<div class="viewcode-block" id="LeaderService.RegisterFollower">
+<a class="viewcode-back" href="../modules.html#leader_server.LeaderService.RegisterFollower">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">RegisterFollower</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Registers a follower and returns the current database snapshot.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (RegisterFollowerRequest): Follower ID and address.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            RegisterFollowerResponse: Serialized DB and known followers.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">follower_id</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">follower_id</span>
+        <span class="n">follower_address</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">follower_address</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">follower_id</span><span class="p">,</span> <span class="n">follower_address</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="p">[</span><span class="s1">&#39;followers&#39;</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="p">[</span><span class="s1">&#39;followers&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">follower_id</span><span class="p">,</span> <span class="n">follower_address</span><span class="p">))</span>
+
+        <span class="c1"># Fetch and pickle the data from ORM objects</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">db_engine</span><span class="o">.</span><span class="n">begin</span><span class="p">()</span> <span class="k">as</span> <span class="n">connection</span><span class="p">:</span>
+            <span class="c1"># Implement this function to fetch data from ORM objects</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">fetch_all_data_from_orm</span><span class="p">(</span><span class="n">connection</span><span class="p">)</span>
+            <span class="n">pickled_data</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+        <span class="n">other_followers</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">follower</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">follower</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">follower</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="p">[</span><span class="s1">&#39;followers&#39;</span><span class="p">]</span> <span class="k">if</span> <span class="n">follower</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">follower_id</span><span class="p">]</span>
+        <span class="c1"># inform other followers about this new follower</span>
+        <span class="k">for</span> <span class="n">follower</span> <span class="ow">in</span> <span class="n">other_followers</span><span class="p">:</span>
+            <span class="n">saddress</span> <span class="o">=</span> <span class="n">follower</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="k">with</span> <span class="n">grpc</span><span class="o">.</span><span class="n">insecure_channel</span><span class="p">(</span><span class="n">saddress</span><span class="p">)</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+                <span class="n">stub</span> <span class="o">=</span> <span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">FollowerServiceStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+                <span class="c1"># print(channel, stub)</span>
+                <span class="n">stub</span><span class="o">.</span><span class="n">UpdateFollowers</span><span class="p">(</span><span class="n">spec_pb2</span><span class="o">.</span><span class="n">UpdateFollowersRequest</span><span class="p">(</span>
+                    <span class="n">update_data</span><span class="o">=</span><span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">((</span><span class="n">follower_id</span><span class="p">,</span> <span class="n">follower_address</span><span class="p">))</span>
+                <span class="p">))</span>
+
+        <span class="n">response</span> <span class="o">=</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">RegisterFollowerResponse</span><span class="p">(</span>
+            <span class="n">error_code</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">error_message</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+            <span class="n">pickled_db</span><span class="o">=</span><span class="n">pickled_data</span><span class="p">,</span>
+            <span class="n">other_followers</span><span class="o">=</span><span class="n">other_followers</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span></div>
+
+
+<div class="viewcode-block" id="LeaderService.HeartBeat">
+<a class="viewcode-back" href="../modules.html#leader_server.LeaderService.HeartBeat">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">HeartBeat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Responds to heartbeat checks from followers.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (Empty): Empty message.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Ack: Acknowledgment response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">Ack</span><span class="p">(</span><span class="n">error_code</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">error_message</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LeaderService.CheckLeader">
+<a class="viewcode-back" href="../modules.html#leader_server.LeaderService.CheckLeader">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">CheckLeader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Confirms that this node is the current leader.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (Empty): Empty message.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Ack: Acknowledgment response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">Ack</span><span class="p">(</span><span class="n">error_code</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">error_message</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="n">table_class_mapping</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s1">&#39;users&#39;</span><span class="p">:</span> <span class="n">UserModel</span><span class="p">,</span>
+    <span class="s1">&#39;messages&#39;</span><span class="p">:</span> <span class="n">MessageModel</span><span class="p">,</span>
+    <span class="s1">&#39;deleted_messages&#39;</span><span class="p">:</span> <span class="n">DeletedMessageModel</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="serve_leader_client">
+<a class="viewcode-back" href="../modules.html#leader_server.serve_leader_client">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">serve_leader_client</span><span class="p">(</span><span class="n">leader_state</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Starts the gRPC server for handling client requests.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        leader_state (dict): Dictionary containing leader server state.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        grpc.Server: The gRPC server object.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">db_session</span><span class="p">,</span> <span class="n">address</span><span class="p">,</span> <span class="n">update_queue</span><span class="p">,</span> <span class="n">client_address</span> <span class="o">=</span> <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;db_session&#39;</span><span class="p">],</span> <span class="n">leader_state</span><span class="p">[</span>
+        <span class="s1">&#39;leader_address&#39;</span><span class="p">],</span> <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;update_queue&#39;</span><span class="p">],</span> <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;client_address&#39;</span><span class="p">]</span>
+    <span class="n">server</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">server</span><span class="p">(</span><span class="n">futures</span><span class="o">.</span><span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="mi">10</span><span class="p">))</span>
+    <span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">add_ClientAccountServicer_to_server</span><span class="p">(</span>
+        <span class="n">ClientService</span><span class="p">(</span><span class="n">db_session</span><span class="o">=</span><span class="n">db_session</span><span class="p">,</span> <span class="n">update_queue</span><span class="o">=</span><span class="n">update_queue</span><span class="p">),</span> <span class="n">server</span><span class="p">)</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">add_insecure_port</span><span class="p">(</span><span class="n">client_address</span><span class="p">)</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Client server started, listening on &quot;</span> <span class="o">+</span> <span class="n">client_address</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">server</span></div>
+
+
+
+<div class="viewcode-block" id="serve_leader_follower">
+<a class="viewcode-back" href="../modules.html#leader_server.serve_leader_follower">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">serve_leader_follower</span><span class="p">(</span><span class="n">leader_state</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Starts the gRPC server for inter-leader/follower communication.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        leader_state (dict): Dictionary containing leader server state.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        grpc.Server: The gRPC server object.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">address</span><span class="p">,</span> <span class="n">db_engine</span> <span class="o">=</span> <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;leader_address&#39;</span><span class="p">],</span> <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;db_engine&#39;</span><span class="p">]</span>
+
+    <span class="n">server</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">server</span><span class="p">(</span><span class="n">futures</span><span class="o">.</span><span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="mi">20</span><span class="p">))</span>
+    <span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">add_LeaderServiceServicer_to_server</span><span class="p">(</span>
+        <span class="n">LeaderService</span><span class="p">(</span><span class="n">leader_state</span><span class="p">,</span> <span class="n">db_engine</span><span class="o">=</span><span class="n">db_engine</span><span class="p">),</span> <span class="n">server</span><span class="p">)</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">add_insecure_port</span><span class="p">(</span><span class="n">address</span><span class="p">)</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Leader server started, listening on &quot;</span> <span class="o">+</span> <span class="n">address</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">server</span></div>
+
+
+
+<div class="viewcode-block" id="get_update_data">
+<a class="viewcode-back" href="../modules.html#leader_server.get_update_data">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_update_data</span><span class="p">(</span><span class="n">update_queue</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fetches the next item from the update queue, if available.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        update_queue (queue.Queue): The update queue.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Any: The next update item or None if the queue is empty.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">update_queue</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">block</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">data</span>
+    <span class="k">except</span> <span class="n">queue</span><span class="o">.</span><span class="n">Empty</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="update_followers">
+<a class="viewcode-back" href="../modules.html#leader_server.update_followers">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">update_followers</span><span class="p">(</span><span class="n">leader_state</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Continuously sends updates from the queue to all followers.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        leader_state (dict): Dictionary containing leader server state.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>  <span class="c1"># Give followers time to come online first</span>
+
+    <span class="n">retry_threshold</span> <span class="o">=</span> <span class="mi">3</span>
+    <span class="n">retry_tracker</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># Track how many times a follower failed</span>
+
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">follower_addresses</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;followers&#39;</span><span class="p">])</span>  <span class="c1"># Create a copy to modify safely</span>
+        <span class="n">update_queue</span> <span class="o">=</span> <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;update_queue&#39;</span><span class="p">]</span>
+
+        <span class="n">update_data</span> <span class="o">=</span> <span class="n">get_update_data</span><span class="p">(</span><span class="n">update_queue</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">update_data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">follower_id</span><span class="p">,</span> <span class="n">follower_address</span> <span class="ow">in</span> <span class="n">follower_addresses</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">with</span> <span class="n">grpc</span><span class="o">.</span><span class="n">insecure_channel</span><span class="p">(</span><span class="n">follower_address</span><span class="p">)</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+                        <span class="n">stub</span> <span class="o">=</span> <span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">FollowerServiceStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+                        <span class="n">request</span> <span class="o">=</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">AcceptUpdatesRequest</span><span class="p">(</span><span class="n">update_data</span><span class="o">=</span><span class="n">update_data</span><span class="p">)</span>
+                        <span class="n">stub</span><span class="o">.</span><span class="n">AcceptUpdates</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+                        <span class="n">retry_tracker</span><span class="p">[</span><span class="n">follower_address</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># Reset on success</span>
+                <span class="k">except</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[WARN] Failed to send update to follower </span><span class="si">{</span><span class="n">follower_address</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">code</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+                    <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">code</span><span class="p">()</span> <span class="o">==</span> <span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">UNAVAILABLE</span><span class="p">:</span>
+                        <span class="n">retry_tracker</span><span class="p">[</span><span class="n">follower_address</span><span class="p">]</span> <span class="o">=</span> <span class="n">retry_tracker</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">follower_address</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+                        <span class="k">if</span> <span class="n">retry_tracker</span><span class="p">[</span><span class="n">follower_address</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">retry_threshold</span><span class="p">:</span>
+                            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[INFO] Removing unreachable follower: </span><span class="si">{</span><span class="n">follower_address</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                            <span class="n">leader_state</span><span class="p">[</span><span class="s1">&#39;followers&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">remove</span><span class="p">((</span><span class="n">follower_id</span><span class="p">,</span> <span class="n">follower_address</span><span class="p">))</span>
+                            <span class="n">retry_tracker</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">follower_address</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Unexpected gRPC error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Manasvi Goyal and Sukanya Krishna.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,446 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>follower_server &mdash; Distributed Chat App with Replication and Persistance 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            Distributed Chat App with Replication and Persistance
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../modules.html">Chat Application Modules</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Distributed Chat App with Replication and Persistance</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Module code</a></li>
+      <li class="breadcrumb-item active">follower_server</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for follower_server</h1><div class="highlight"><pre>
+<span></span><span class="c1"># import sys</span>
+<span class="c1"># import os</span>
+<span class="c1"># sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), &#39;..&#39;)))</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">concurrent</span><span class="w"> </span><span class="kn">import</span> <span class="n">futures</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">grpc</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">spec_pb2</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">spec_pb2_grpc</span>
+
+<span class="c1"># from src.message_frame import StatusCode, StatusMessages</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">models</span><span class="w"> </span><span class="kn">import</span> <span class="n">UserModel</span><span class="p">,</span> <span class="n">MessageModel</span><span class="p">,</span> <span class="n">DeletedMessageModel</span><span class="p">,</span> <span class="n">init_db</span><span class="p">,</span> <span class="n">get_session_factory</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy.orm</span><span class="w"> </span><span class="kn">import</span> <span class="n">scoped_session</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">inspect</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pickle</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">queue</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">StatusCode</span><span class="p">,</span> <span class="n">StatusMessages</span>
+
+<span class="n">table_class_mapping</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s1">&#39;users&#39;</span><span class="p">:</span> <span class="n">UserModel</span><span class="p">,</span>
+    <span class="s1">&#39;messages&#39;</span><span class="p">:</span> <span class="n">MessageModel</span><span class="p">,</span>
+    <span class="s1">&#39;deleted_messages&#39;</span><span class="p">:</span> <span class="n">DeletedMessageModel</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="FollowerService">
+<a class="viewcode-back" href="../modules.html#follower_server.FollowerService">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FollowerService</span><span class="p">(</span><span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">FollowerServiceServicer</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_session</span><span class="p">,</span> <span class="n">leader_address</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes the follower&#39;s internal service.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            db_session (SessionFactory): SQLAlchemy session factory.</span>
+<span class="sd">            leader_address (str): Address of the current leader.</span>
+<span class="sd">            state (dict): Shared follower state.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db_session</span> <span class="o">=</span> <span class="n">db_session</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">leader_address</span> <span class="o">=</span> <span class="n">leader_address</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="n">state</span>
+
+<div class="viewcode-block" id="FollowerService.AcceptUpdates">
+<a class="viewcode-back" href="../modules.html#follower_server.FollowerService.AcceptUpdates">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">AcceptUpdates</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Applies state updates from the leader.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (AcceptUpdatesRequest): Pickled update data.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ServerResponse: Acknowledgment response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">update_data</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">update_data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">process_update_data</span><span class="p">(</span><span class="n">update_data</span><span class="p">)</span>
+
+        <span class="n">response</span> <span class="o">=</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">ServerResponse</span><span class="p">(</span>
+            <span class="n">error_code</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">error_message</span><span class="o">=</span><span class="s2">&quot;&quot;</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span></div>
+
+
+<div class="viewcode-block" id="FollowerService.process_update_data">
+<a class="viewcode-back" href="../modules.html#follower_server.FollowerService.process_update_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process_update_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">update_data</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deserializes and applies an update to the local database.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            update_data (bytes): Pickled (table, action, object) tuple.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">session</span> <span class="o">=</span> <span class="n">scoped_session</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">db_session</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">update_data</span><span class="p">)</span>
+            <span class="n">table</span><span class="p">,</span> <span class="n">action</span><span class="p">,</span> <span class="n">obj</span> <span class="o">=</span> <span class="n">data</span>
+
+            <span class="c1"># Copy attributes without accessing them through SQLAlchemy&#39;s descriptors</span>
+            <span class="c1"># This avoids the detached instance error</span>
+            <span class="n">obj_dict</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">inspect</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="vm">__class__</span><span class="p">)</span><span class="o">.</span><span class="n">mapper</span><span class="o">.</span><span class="n">column_attrs</span><span class="p">:</span>
+                <span class="c1"># Access the raw dictionary underlying the object to avoid triggering lazy loading</span>
+                <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">key</span> <span class="ow">in</span> <span class="n">obj</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">:</span>
+                    <span class="n">obj_dict</span><span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">obj</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">key</span><span class="p">]</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># For any attributes not in __dict__, use a safer approach</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">obj_dict</span><span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">key</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                        <span class="c1"># If attribute access fails, use a default value or skip</span>
+                        <span class="n">obj_dict</span><span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+            <span class="c1"># Recreate the object from the data</span>
+            <span class="n">new_obj</span> <span class="o">=</span> <span class="n">table_class_mapping</span><span class="p">[</span><span class="n">table</span><span class="p">]()</span>
+            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">obj_dict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="n">new_obj</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">action</span> <span class="o">==</span> <span class="s1">&#39;add&#39;</span><span class="p">:</span>
+                <span class="n">session</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">new_obj</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">action</span> <span class="o">==</span> <span class="s1">&#39;delete&#39;</span><span class="p">:</span>
+                <span class="n">existing</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">table_class_mapping</span><span class="p">[</span><span class="n">table</span><span class="p">])</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_obj</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">existing</span><span class="p">:</span>
+                    <span class="n">session</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">existing</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">action</span> <span class="o">==</span> <span class="s1">&#39;update&#39;</span><span class="p">:</span>
+                <span class="c1"># For updates, use merge which handles detached instances better</span>
+                <span class="n">session</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">new_obj</span><span class="p">)</span>
+
+            <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+            <span class="c1"># If this was a user update with session information, ensure we keep it</span>
+            <span class="k">if</span> <span class="n">action</span> <span class="o">==</span> <span class="s1">&#39;update&#39;</span> <span class="ow">and</span> <span class="n">table</span> <span class="o">==</span> <span class="s1">&#39;users&#39;</span><span class="p">:</span>
+                <span class="n">existing</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">table_class_mapping</span><span class="p">[</span><span class="n">table</span><span class="p">])</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">new_obj</span><span class="o">.</span><span class="n">id</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">existing</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">new_obj</span><span class="p">,</span> <span class="s1">&#39;session_id&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">new_obj</span><span class="o">.</span><span class="n">session_id</span><span class="p">:</span>
+                    <span class="n">existing</span><span class="o">.</span><span class="n">session_id</span> <span class="o">=</span> <span class="n">new_obj</span><span class="o">.</span><span class="n">session_id</span>
+                    <span class="n">existing</span><span class="o">.</span><span class="n">logged_in</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error processing update: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="FollowerService.UpdateLeader">
+<a class="viewcode-back" href="../modules.html#follower_server.FollowerService.UpdateLeader">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">UpdateLeader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Updates the leader address and re-syncs the database.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (NewLeaderRequest): Contains new leader info.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Ack: Acknowledgment response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">leader_address</span><span class="p">,</span> <span class="n">leader_id</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">new_leader_address</span><span class="p">,</span> <span class="n">request</span><span class="o">.</span><span class="n">new_leader_id</span>
+        <span class="n">assign_new_leader</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="p">,</span> <span class="n">leader_address</span><span class="p">,</span> <span class="n">leader_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">Ack</span><span class="p">(</span><span class="n">error_code</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">error_message</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="FollowerService.UpdateFollowers">
+<a class="viewcode-back" href="../modules.html#follower_server.FollowerService.UpdateFollowers">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">UpdateFollowers</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Adds a new follower to the internal list.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            request (UpdateFollowersRequest): Pickled follower info.</span>
+<span class="sd">            context (grpc.ServicerContext): gRPC context.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Ack: Acknowledgment response.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># print(&quot;Updating followers for follower&quot;)</span>
+        <span class="n">new_follower</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">update_data</span><span class="p">)</span>
+        <span class="c1"># remove the current follower from the list</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="p">[</span><span class="s1">&#39;followers&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_follower</span><span class="p">)</span>
+        <span class="c1"># print(new_follower, self.state[&#39;followers&#39;])</span>
+        <span class="k">return</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">Ack</span><span class="p">(</span><span class="n">error_code</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">error_message</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="request_update">
+<a class="viewcode-back" href="../modules.html#follower_server.request_update">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">request_update</span><span class="p">(</span><span class="n">follower_state</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Registers this follower with the leader and syncs local DB.</span>
+
+<span class="sd">    Retries indefinitely until it successfully contacts the leader.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">pickle</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">inspect</span>
+
+    <span class="n">leader_address</span> <span class="o">=</span> <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;leader_address&#39;</span><span class="p">]</span>
+    <span class="n">server_id</span> <span class="o">=</span> <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;follower_id&#39;</span><span class="p">]</span>
+    <span class="n">internal_address</span> <span class="o">=</span> <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;follower_address&#39;</span><span class="p">]</span>
+    <span class="n">db_session</span> <span class="o">=</span> <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;db_session&#39;</span><span class="p">]</span>
+
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">grpc</span><span class="o">.</span><span class="n">insecure_channel</span><span class="p">(</span><span class="n">leader_address</span><span class="p">)</span> <span class="k">as</span> <span class="n">channel</span><span class="p">:</span>
+                <span class="n">stub</span> <span class="o">=</span> <span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">LeaderServiceStub</span><span class="p">(</span><span class="n">channel</span><span class="p">)</span>
+                <span class="n">request</span> <span class="o">=</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">RegisterFollowerRequest</span><span class="p">(</span>
+                    <span class="n">follower_id</span><span class="o">=</span><span class="n">server_id</span><span class="p">,</span>
+                    <span class="n">follower_address</span><span class="o">=</span><span class="n">internal_address</span>
+                <span class="p">)</span>
+                <span class="n">response</span> <span class="o">=</span> <span class="n">stub</span><span class="o">.</span><span class="n">RegisterFollower</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+
+                <span class="n">leader_db</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">pickled_db</span><span class="p">)</span>
+
+                <span class="n">session</span> <span class="o">=</span> <span class="n">scoped_session</span><span class="p">(</span><span class="n">db_session</span><span class="p">)</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">for</span> <span class="n">table_name</span><span class="p">,</span> <span class="n">records</span> <span class="ow">in</span> <span class="n">leader_db</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                        <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+                            <span class="k">def</span><span class="w"> </span><span class="nf">object_as_dict</span><span class="p">(</span><span class="n">obj_</span><span class="p">):</span>
+                                <span class="k">return</span> <span class="p">{</span><span class="n">c</span><span class="o">.</span><span class="n">key</span><span class="p">:</span> <span class="n">obj_</span><span class="o">.</span><span class="vm">__dict__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">key</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">inspect</span><span class="p">(</span><span class="n">obj_</span><span class="p">)</span><span class="o">.</span><span class="n">mapper</span><span class="o">.</span><span class="n">column_attrs</span><span class="p">}</span>
+                            <span class="n">new_record</span> <span class="o">=</span> <span class="n">table_class_mapping</span><span class="p">[</span><span class="n">table_name</span><span class="p">](</span><span class="o">**</span><span class="n">object_as_dict</span><span class="p">(</span><span class="n">record</span><span class="p">))</span>
+                            <span class="n">session</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">new_record</span><span class="p">)</span>
+                    <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Error occurred while syncing DB:&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+                    <span class="n">session</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+                <span class="k">finally</span><span class="p">:</span>
+                    <span class="n">session</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+
+                <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;followers&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
+                    <span class="nb">set</span><span class="p">([</span><span class="nb">tuple</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;-&#39;</span><span class="p">))</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">response</span><span class="o">.</span><span class="n">other_followers</span><span class="p">])</span>
+                <span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[INFO] Successfully registered with leader at </span><span class="si">{</span><span class="n">leader_address</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">return</span>  <span class="c1"># ✅ success</span>
+
+        <span class="k">except</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[WARN] RegisterFollower failed with code </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">code</span><span class="p">()</span><span class="si">}</span><span class="s2">. Retrying in 2s...&quot;</span><span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[ERROR] Unexpected exception in request_update: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="assign_new_leader">
+<a class="viewcode-back" href="../modules.html#follower_server.assign_new_leader">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">assign_new_leader</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">leader_address</span><span class="p">,</span> <span class="n">leader_id</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Accepts a new leader and resets local state.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        state (dict): Shared follower state.</span>
+<span class="sd">        leader_address (str): New leader&#39;s address.</span>
+<span class="sd">        leader_id (str): New leader&#39;s ID.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Accepting new leader&quot;</span><span class="p">)</span>
+    <span class="n">state</span><span class="p">[</span><span class="s1">&#39;leader_address&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">leader_address</span>
+    <span class="c1"># this is only required for windows that has file lockers</span>
+    <span class="c1"># print(&#39;db_eninge in &#39;, &#39;db_engine&#39; in state)</span>
+    <span class="k">if</span> <span class="s1">&#39;db_engine&#39;</span> <span class="ow">in</span> <span class="n">state</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">state</span><span class="p">[</span><span class="s1">&#39;db_engine&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">dispose</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;deleting engine&#39;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+    <span class="n">database_engine</span> <span class="o">=</span> <span class="n">init_db</span><span class="p">(</span><span class="n">state</span><span class="p">[</span><span class="s1">&#39;database_url&#39;</span><span class="p">],</span> <span class="n">drop_tables</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">SessionFactory</span> <span class="o">=</span> <span class="n">get_session_factory</span><span class="p">(</span><span class="n">database_engine</span><span class="p">)</span>
+    <span class="n">state</span><span class="p">[</span><span class="s1">&#39;database_engine&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">database_engine</span>
+    <span class="n">state</span><span class="p">[</span><span class="s1">&#39;db_session&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">SessionFactory</span>
+
+    <span class="n">follower_server</span> <span class="o">=</span> <span class="n">server_follower_leader</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+
+    <span class="n">state</span><span class="p">[</span><span class="s1">&#39;follower_leader_server&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">follower_server</span>
+    <span class="c1"># send message to the leaders registe method</span>
+    <span class="n">request_update</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+
+    <span class="c1"># remove leader from the list of followers</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">state</span><span class="p">[</span><span class="s1">&#39;followers&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">remove</span><span class="p">((</span><span class="n">leader_address</span><span class="p">,</span> <span class="n">leader_id</span><span class="p">))</span>
+    <span class="k">except</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Assigning new leader complete&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ClientServiceFollower">
+<a class="viewcode-back" href="../modules.html#follower_server.ClientServiceFollower">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ClientServiceFollower</span><span class="p">(</span><span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">ClientAccountServicer</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">leader_address</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes the follower-side client service stub that forwards to leader.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            leader_address (str): Address of the current leader server.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">leader_address</span> <span class="o">=</span> <span class="n">leader_address</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Overrides attribute access to raise unimplemented error for all RPC methods.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            name (str): Method name being accessed.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Callable: A dummy method that raises UNIMPLEMENTED error.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Forward all method calls to the leader</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">method</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">grpc</span><span class="o">.</span><span class="n">RpcError</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">UNIMPLEMENTED</span><span class="p">,</span> <span class="s2">&quot;This method is not available on follower.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">method</span>
+    
+<div class="viewcode-block" id="ClientServiceFollower.ListUsers">
+<a class="viewcode-back" href="../modules.html#follower_server.ClientServiceFollower.ListUsers">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ListUsers</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_code</span><span class="p">(</span><span class="n">grpc</span><span class="o">.</span><span class="n">StatusCode</span><span class="o">.</span><span class="n">FAILED_PRECONDITION</span><span class="p">)</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_details</span><span class="p">(</span><span class="s2">&quot;NOT LEADER: CONNECT TO LEADER SERVER&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">spec_pb2</span><span class="o">.</span><span class="n">Users</span><span class="p">()</span></div>
+</div>
+
+
+
+
+<div class="viewcode-block" id="serve_follower_client">
+<a class="viewcode-back" href="../modules.html#follower_server.serve_follower_client">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">serve_follower_client</span><span class="p">(</span><span class="n">follower_state</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Starts the follower’s gRPC server for clients.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        follower_state (dict): Shared follower state.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        grpc.Server: The gRPC server object.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">db_session</span><span class="p">,</span> <span class="n">address</span><span class="p">,</span> <span class="n">leader_address</span><span class="p">,</span> <span class="n">client_address</span> <span class="o">=</span> <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;db_session&#39;</span><span class="p">],</span> <span class="n">follower_state</span><span class="p">[</span>
+        <span class="s1">&#39;follower_address&#39;</span><span class="p">],</span> <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;leader_address&#39;</span><span class="p">],</span> <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;client_address&#39;</span><span class="p">]</span>
+
+    <span class="n">server</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">server</span><span class="p">(</span><span class="n">futures</span><span class="o">.</span><span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="mi">10</span><span class="p">))</span>
+    <span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">add_ClientAccountServicer_to_server</span><span class="p">(</span>
+        <span class="n">ClientServiceFollower</span><span class="p">(</span><span class="n">leader_address</span><span class="o">=</span><span class="n">leader_address</span><span class="p">),</span> <span class="n">server</span><span class="p">)</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">add_insecure_port</span><span class="p">(</span><span class="n">client_address</span><span class="p">)</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Client server started, listening on &quot;</span><span class="p">,</span> <span class="n">client_address</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">server</span></div>
+
+
+
+<div class="viewcode-block" id="server_follower_leader">
+<a class="viewcode-back" href="../modules.html#follower_server.server_follower_leader">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">server_follower_leader</span><span class="p">(</span><span class="n">follower_state</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Starts the internal gRPC server for leader-follower updates.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        follower_state (dict): Shared follower state.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        grpc.Server: The gRPC server object.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">db_session</span><span class="p">,</span> <span class="n">leader_address</span><span class="p">,</span> <span class="n">address</span><span class="p">,</span> <span class="n">followers</span> <span class="o">=</span> <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;db_session&#39;</span><span class="p">],</span> <span class="n">follower_state</span><span class="p">[</span>
+        <span class="s1">&#39;leader_address&#39;</span><span class="p">],</span> <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;follower_address&#39;</span><span class="p">],</span> <span class="n">follower_state</span><span class="p">[</span><span class="s1">&#39;followers&#39;</span><span class="p">]</span>
+
+    <span class="n">server</span> <span class="o">=</span> <span class="n">grpc</span><span class="o">.</span><span class="n">server</span><span class="p">(</span><span class="n">futures</span><span class="o">.</span><span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="mi">10</span><span class="p">))</span>
+    <span class="n">spec_pb2_grpc</span><span class="o">.</span><span class="n">add_FollowerServiceServicer_to_server</span><span class="p">(</span>
+        <span class="n">FollowerService</span><span class="p">(</span><span class="n">db_session</span><span class="o">=</span><span class="n">db_session</span><span class="p">,</span> <span class="n">leader_address</span><span class="o">=</span><span class="n">leader_address</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">follower_state</span><span class="p">),</span> <span class="n">server</span><span class="p">)</span>
+
+    <span class="n">server</span><span class="o">.</span><span class="n">add_insecure_port</span><span class="p">(</span><span class="n">address</span><span class="p">)</span>
+    <span class="n">server</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Follower server started, listening on &quot;</span> <span class="o">+</span> <span class="n">address</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">server</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Manasvi Goyal and Sukanya Krishna.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
